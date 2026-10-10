@@ -79,7 +79,22 @@ def _env_token() -> str | None:
 
 
 def _token_from_config() -> str | None:
-    for path in (ROOT / "mcp-config.example.json", Path.home() / ".codebuddy" / ".mcp.json"):
+    """从本机 MCP 配置里取 Token。
+
+    顺序：仓库内 ``mcp-config.local.json``（自建、已 gitignore）→ 客户端 MCP 配置
+    → 仓库内 ``mcp-config.example.json``（模板，最后兜底）。
+
+    注意：``${VAR}`` 占位符是**本项目自己**展开的，多数 MCP 客户端并不支持这种写法，
+    直接把 example 拷进客户端会拿到字面量 ``${MCD_MCP_TOKEN}`` 从而 401。
+    """
+    home = Path.home()
+    for path in (
+        ROOT / "mcp-config.local.json",
+        home / ".workbuddy" / "mcp.json",
+        home / ".codebuddy" / ".mcp.json",
+        home / ".cursor" / "mcp.json",
+        ROOT / "mcp-config.example.json",
+    ):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001

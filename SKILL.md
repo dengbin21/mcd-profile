@@ -36,6 +36,43 @@ license: MIT
 **优先级**：用户问「怎么点/怎么买/划算吗」时**先给 McSolve**，不要用 `archive` 的省钱复盘去回答——
 后者是历史统计，前者才是「这一单」的答案。
 
+## 环境准备：拿到并配置 Token
+
+Token 来自麦当劳开放平台 **https://open.mcd.cn/mcp** ，按你的用法二选一：
+
+**用法 A · 在 MCP 客户端里当 Skill 用（推荐）**——由宿主 agent 直连 `mcd-mcp`，本项目不碰 Token。
+在客户端的 MCP 配置里加一条（以 WorkBuddy 的 `~/.workbuddy/mcp.json` 为例）：
+
+```json
+{
+  "mcpServers": {
+    "mcd-mcp": {
+      "type": "streamablehttp",
+      "url": "https://mcp.mcd.cn",
+      "headers": { "Authorization": "Bearer <粘贴你的真实 Token>" }
+    }
+  }
+}
+```
+
+⚠️ **别照抄 `mcp-config.example.json` 的 `Bearer ${MCD_MCP_TOKEN}`**：`${}` 展开是本项目 CLI
+自己实现的行为，多数 MCP 客户端不支持，直接拷过去会拿到字面量从而 401。客户端里**填真值**。
+
+**用法 B · 直接跑本仓库的 CLI**——三种配法，命中即停：
+
+```bash
+export MCD_MCP_TOKEN=<你的 Token>            # ① 环境变量（推荐）
+python -m src.cli --token <你的 Token> ...   # ② 命令行传入
+cp mcp-config.example.json mcp-config.local.json  # ③ 文件（已 gitignore，不会误提交）
+```
+
+扫描顺序：`mcp-config.local.json` → `~/.workbuddy/mcp.json` → `~/.codebuddy/.mcp.json`
+→ `~/.cursor/mcp.json` → `mcp-config.example.json`。**不要把真实 Token 写进
+`mcp-config.example.json`**——它会被提交到仓库。
+
+**没有 Token 也能玩**：`python -m src.cli demo`、任意命令加 `--offline`（脱敏样例数据），
+或直接开在线版 https://mcsolve.app.workbuddy.host/ （免登录免 Token）。
+
 ## 一、McSolve：把 `calculate-price` 当「价格预言机」
 
 全场都把 `calculate-price` 当「下单前的最后一步」：调一次，看看多少钱，然后下单，用完即弃。

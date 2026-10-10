@@ -241,10 +241,20 @@ pip install -r requirements.txt
 export MCD_MCP_TOKEN=<你的麦当劳 MCP Token>
 ```
 
-`mcp-config.example.json` 已声明 `mcd-mcp` 服务（`https://mcp.mcd.cn`），
-Token 通过环境变量注入，**不写死在仓库里**。
+Token 三种配法，命中即停，优先级从高到低：
 
-> 没有 Token 也能体验：`demo` 命令用随项目附带的**脱敏样例数据**离线生成完整档案。
+| 方式 | 用法 | 说明 |
+|---|---|---|
+| ① 环境变量 | `export MCD_MCP_TOKEN=...` | 推荐；也可 `python -m src.cli --token <Token> ...` |
+| ② 本地配置文件 | `cp mcp-config.example.json mcp-config.local.json` 后填值 | 已加进 `.gitignore`，不会误提交 |
+| ③ 系统 MCP 配置 | 已配过 `mcd-mcp` 的话自动读取 | 依次扫 `~/.workbuddy/mcp.json`、`~/.codebuddy/.mcp.json`、`~/.cursor/mcp.json` |
+
+⚠️ **不要把真实 Token 写进 `mcp-config.example.json`**——那是模板，会被提交到仓库。
+另外它里面的 `Bearer ${MCD_MCP_TOKEN}` 是**本项目 CLI 自己**展开的占位符，
+多数 MCP 客户端不支持 `${}` 展开，直接拷进客户端会拿到字面量从而 401，客户端里请填真值。
+
+> 没有 Token 也能体验：`demo` 命令用随项目附带的**脱敏样例数据**离线生成完整档案，
+> 或直接开在线版 https://mcsolve.app.workbuddy.host/ （免登录、免 Token）。
 
 ## 5. 使用示例
 

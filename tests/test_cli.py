@@ -13,7 +13,9 @@
 """
 from __future__ import annotations
 
+import argparse
 import contextlib
+import inspect
 import io
 import json
 import sys
@@ -22,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src import cli                                                       # noqa: E402
 from src.cli import main                                                  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -187,10 +190,50 @@ def test_tools_offline_lists_the_whole_plan():
 
 
 # ---------------------------------------------------------------------- #
+# 5. Token 配置（别人要用这个 Skill，第一步就是配它，配错会静默 401）
+# ---------------------------------------------------------------------- #
+def test_env_token_beats_everything(monkeypatch, tmp_path):
+    """环境变量优先级最高：CLI 里写得再真也不能盖过 env。"""
+    monkeypatch.setenv("MCD_MCP_TOKEN", "FROM_ENV")
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    _write_cfg(tmp_path / "mcp-config.local.json", "FROM_FILE")
+    assert cli._env_token() == "FROM_ENV"
+    assert cli._client(argparse.Namespace(token=None)).token == "FROM_ENV"
+
+
+def test_local_config_wins_over_example(monkeypatch, tmp_path):
+    """`mcp-config.local.json`（已 gitignore）应优先于模板文件。"""
+    monkeypatch.delenv("MCD_MCP_TOKEN", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "nohome")   # 排除本机真实配置
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    _write_cfg(tmp_path / "mcp-config.local.json", "FROM_LOCAL")
+    _write_cfg(tmp_path / "mcp-config.example.json", "FROM_EXAMPLE")
+    assert cli._token_from_config() == "FROM_LOCAL"
+
+
+def test_placeholder_is_never_used_as_token(monkeypatch, tmp_path):
+    """`Bearer ${MCD_MCP_TOKEN}` 是占位符：没设环境变量时不能把它当 Token 发出去，
+    否则会以字面量进 Authorization 头，换来一个看不懂的 401。"""
+    monkeypatch.delenv("MCD_MCP_TOKEN", raising=False)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "nohome")
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    _write_cfg(tmp_path / "mcp-config.example.json", "${MCD_MCP_TOKEN}")
+    assert cli._token_from_config() is None
+
+
+def _write_cfg(path: Path, token: str) -> None:
+    path.write_text(json.dumps({"mcpServers": {"mcd-mcp": {
+        "type": "streamablehttp", "url": "https://mcp.mcd.cn",
+        "headers": {"Authorization": f"Bearer {token}"}}}}), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------- #
 def _main() -> None:
     fails = 0
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
+            if inspect.signature(fn).parameters:
+                continue          # 需要 fixture 的交给 pytest，这里只跑无参的
             try:
                 fn()
                 print(f"  ✓ {name}")
