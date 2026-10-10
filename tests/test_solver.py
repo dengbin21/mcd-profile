@@ -13,11 +13,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.models import MenuItem                                            # noqa: E402
+from src.models import CartItem, MenuItem                                            # noqa: E402
 from src.solver import (                                                   # noqa: E402
     MAX_ADD_HARD, MAX_ENUM, Solution, build_pool, eat_command,
-    effective_max_add, enumerate_candidates, estimate_discount, grade_of, make_offline_pricer,
-    parse_coupons, pick_verify_batch, solve,
+    effective_max_add, enumerate_candidates, estimate_discount, grade_of, is_better,
+    make_offline_pricer, parse_coupons, pick_verify_batch, solve,
 )
 from src.solve_report import render_solve_html, render_solve_markdown      # noqa: E402
 
@@ -314,14 +314,144 @@ def test_eat_command_closes_the_loop():
 
 
 def test_report_discloses_discount_vs_paid_gap():
-    """「折扣力度」与「多花」会并排出现，必须解释口径，否则读成自相矛盾。"""
+    """「省钱率」与「多花」会并排出现，必须解释口径，否则读成自相矛盾。"""
     menu, rules = _menu(), parse_coupons(["三件任选6折"])
     sol = solve(["1001"], menu, rules, make_offline_pricer(menu, rules), max_add=2)
     md = render_solve_markdown(sol)
     html = render_solve_html(sol)
-    assert "折扣力度" in md and "折扣力度" in html, "「省下」应改为无歧义的「折扣力度」"
+    assert "省钱率" in md and "省钱率" in html, "同一指标应统一叫「省钱率」"
     if sol.saved <= 0 and sol.count != sol.baseline_count:
         assert "口径" in md and "口径" in html, "实付更高时必须说明两个数字的口径差异"
+
+
+def test_is_better_prefers_rate_over_cheaper_paid():
+    """选优判据：省钱率优先，同率才取实付更低——否则退化成「劝人只点 1 件」。"""
+    assert is_better(0.4, 21.9, 0.0, 21.5), "省钱率更高就必须胜出，哪怕实付更高"
+    assert not is_better(0.0, 21.4, 0.4, 21.9), "实付更低但省钱率更低，不能赢"
+    assert is_better(0.4, 21.5, 0.4, 21.9), "同省钱率时实付更低者胜出"
+    assert not is_better(0.4, 21.9, 0.4, 21.5), "同省钱率且实付更高，不该赢"
+    assert is_better(0.2, 99.0, -1.0, None), "第一个候选恒为当前最优"
+    assert not is_better(0.4, 21.9, 0.4, 21.9), "完全相同的候选不是新的最优"
+
+
+def test_kcal_constraint_prunes_candidates():
+    """预算 × 热量双约束：热量上限必须在枚举阶段剪掉超限组合（堵 #224 的缺口）。
+
+    与预算剪枝同规则：只剪「热量下界已超限」的候选；baseline 恒保留作对照。
+    """
+    menu = _menu()
+    rules = parse_coupons(["三件任选6折", "免费脆薯饼"])
+    kcal_map = {"1001": 250.0, "1002": 180.0, "1003": 92.0, "1004": 82.0,
+                "1005": 96.0, "1006": 120.0, "1007": 190.0}
+
+    loose = solve(["1001"], menu, rules, make_offline_pricer(menu, rules),
+                  max_add=3, kcal_map=kcal_map, max_kcal=0.0)
+    assert len(loose.items) == 3, "不限热量时应能凑出 3 件 6 折组合"
+
+    tight = solve(["1001"], menu, rules, make_offline_pricer(menu, rules),
+                  max_add=3, kcal_map=kcal_map, max_kcal=300.0)
+    assert tight.max_kcal == 300.0
+    assert len(tight.items) == 1, f"热量 ≤300 时任何加购都超限，应只剩必选，实际 {[i.name for i in tight.items]}"
+    # 枚举总数不变、通过剪枝的变少——「试了多少种」必须如实上报
+    cands, total = enumerate_candidates(["1001"], menu, rules, max_add=3,
+                                        kcal_map=kcal_map, max_kcal=300.0)
+    assert total > len(cands), "热量剪枝应减少候选数"
+    assert cands[0].codes == ("1001",), "baseline 恒在第一位"
+
+
+def test_kcal_constraint_missing_data_is_lower_bound():
+    """热量数据缺失（记 0）时是下界：只剪「已超限」，绝不误杀未知热量的组合。"""
+    menu = _menu()
+    rules = parse_coupons(["三件任选6折"])
+    kcal_map = {"1001": 250.0}          # 其余商品营养库没匹配到 → 0
+    sol = solve(["1001"], menu, rules, make_offline_pricer(menu, rules),
+                max_add=3, kcal_map=kcal_map, max_kcal=300.0)
+    # 1001(250) + 任意 0 kcal 商品 = 250 ≤ 300，不应被误杀
+    assert len(sol.items) == 3, "未知热量按 0 计不应把合规组合剪掉"
+
+
+def test_voucher_note_only_online():
+    """券凭证码风险只在「联网真验价」披露：离线是本地估算，再提示就是噪音。"""
+    menu, rules = _menu(), parse_coupons(["三件任选6折", "免费脆薯饼"])
+    sol = solve(["1001"], menu, rules, make_offline_pricer(menu, rules), max_add=2)
+    on_md = render_solve_markdown(sol, offline=False)
+    on_html = render_solve_html(sol, offline=False)
+    off_md = render_solve_markdown(sol, offline=True)
+    off_html = render_solve_html(sol, offline=True)
+    assert "凭证商品码" in on_md and "凭证商品码" in on_html, "联网真验价必须披露券凭证码风险"
+    assert "凭证商品码" not in off_md and "凭证商品码" not in off_html
+
+
+def test_progress_stream_reports_final_best():
+    """进度回调流用同一把尺过滤后，最后宣告的「最优」必须等于最终答案。
+
+    此前进度按「最低实付」宣告、最终答案按「省钱率」挑选，两者对不上：
+    板烧鸡腿堡的例子中，最终最优（¥21.90 / 3 件 / 省钱率 40%）在进度里
+    永远不会出现——这里锁住「进度 = 最终」这条一致性。
+    """
+    menu, rules = _menu(), parse_coupons(["三件任选6折", "免费脆薯饼"])
+    pricer = make_offline_pricer(menu, rules)
+    seen: list[tuple[float, float]] = []
+    best = [None, -1.0]                     # (best_paid, best_rate)
+
+    def on_progress(done, paid, rate):
+        if paid is None:
+            return
+        if is_better(rate, paid, best[1], best[0]):
+            best[0], best[1] = paid, rate
+            seen.append((paid, rate))
+
+    sol = solve(["1001"], menu, rules, pricer, max_add=3, on_progress=on_progress)
+    assert seen, "至少 baseline 应被宣告为新的最优"
+    # 进度宣告的最终「最优」必须与求解器选出的答案一致（金额 + 省钱率）
+    assert seen[-1][0] == sol.paid, f"进度最后的 ¥{seen[-1][0]} ≠ 最终答案 ¥{sol.paid}"
+    assert abs(seen[-1][1] - sol.save_rate) < 1e-9
+
+
+def test_offline_footer_is_not_contradictory():
+    """离线战报不能说「本地估算」又说「价格来自官方」——两条必须互相兼容。"""
+    menu, rules = _menu(), parse_coupons(["三件任选6折"])
+    sol = solve(["1001"], menu, rules, make_offline_pricer(menu, rules), max_add=2)
+    off_md = render_solve_markdown(sol, offline=True)
+    on_md = render_solve_markdown(sol, offline=False)
+    off_html = render_solve_html(sol, offline=True)
+    on_html = render_solve_html(sol, offline=False)
+
+    for text in (off_md, off_html):
+        assert "演示模式" in text and "联网后" in text
+        assert "价格来自麦当劳官方" not in text, f"离线口径泄漏了「来自官方」：{text[-120:]}"
+    for text in (on_md, on_html):
+        assert "价格来自麦当劳官方" in text
+        assert "演示模式" not in text, "联网口径不该出现演示模式警告"
+
+
+def test_render_zero_nutrition_is_hidden_in_both():
+    """营养 0 命中时，MD 与 HTML 都要隐藏营养区块，不能一个显示「0 kcal」一个没有。"""
+    item = CartItem(product_code="1001", name="板烧鸡腿堡", quantity=1, price=21.5)
+    sol = Solution(
+        items=[item], original=21.5, paid=21.5, discount=0.0, grade="C",
+        baseline_paid=21.5, baseline_items=[item],
+        nutrition={"kcal": 0.0, "protein": 0.0, "fat": 0.0, "sodium": 0.0,
+                   "matched": 0, "total": 1},
+    )
+    md = render_solve_markdown(sol)
+    html = render_solve_html(sol)
+    assert "0 kcal" not in md and "这一单的营养" not in md
+    assert "这一单的营养" not in html
+
+
+def test_render_positive_nutrition_is_shown():
+    """营养有值时 MD/HTML 都要展示（且 MD 披露覆盖率）。"""
+    sol = Solution(
+        items=[CartItem(product_code="1001", name="板烧鸡腿堡", quantity=1, price=21.5)],
+        original=21.5, paid=21.5, discount=0.0, grade="C",
+        nutrition={"kcal": 739.0, "protein": 29.0, "fat": 38.0, "sodium": 1582.0,
+                   "matched": 1, "total": 1},
+    )
+    md = render_solve_markdown(sol)
+    html = render_solve_html(sol)
+    assert "739" in md and "739" in html
+    assert "覆盖 1/1" in md
 
 
 # ---------------------------------------------------------------------- #

@@ -9,7 +9,9 @@
 1. **离线子命令都能跑通**（评委/demo 最常见的就是 ``--offline``）；
 2. **需要联网的命令必须明确拒绝**，而不是半路炸栈或假装成功；
 3. **命令不得悄悄污染仓库**——产物默认写回 ``examples/`` 的行为要能关掉；
-4. **文案包的三道护栏在 CLI 上真的生效**（告警打印 + 渲染级回退）。
+4. **文案包的三道护栏在 CLI 上真的生效**（告警打印 + 渲染级回退）；
+5. **第一次用的人不会卡在 403 上**——没 Token 时必须给出可照做的指引，
+   且自检报告里不能出现 Token 原文。
 """
 from __future__ import annotations
 
@@ -24,7 +26,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import cli                                                       # noqa: E402
+import pytest                                                             # noqa: E402
+
+from src import cli, mcp_client                                           # noqa: E402
 from src.cli import main                                                  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -45,6 +49,18 @@ def _run(argv: list[str]) -> str:
 
 def _tmpdir():
     return tempfile.TemporaryDirectory()
+
+
+def _run_exit(argv: list[str]) -> tuple[int, str]:
+    """跑一条 CLI 命令，返回 ``(退出码, 打印内容)``。"""
+    buf = io.StringIO()
+    code = 0
+    with contextlib.redirect_stdout(buf):
+        try:
+            main(argv)
+        except SystemExit as exc:
+            code = exc.code if isinstance(exc.code, int) else 0
+    return code, buf.getvalue()
 
 
 # ---------------------------------------------------------------------- #
@@ -75,8 +91,38 @@ def test_preheat_offline_smoke():
 
 def test_archive_offline_smoke():
     out = _run(["--offline", "archive"])
-    assert "麦麦档案" in out
+    assert "麦麦战绩" in out
     assert "麦门人格" in out
+
+
+def test_preheat_hint_uses_date_based_target():
+    """archive 的「下一场活动」回流量必须与预热台同口径（按日期取最近未来活动）。
+
+    回归：`_preheat_hint` 曾依赖 stage 字段的 upcoming[0]（插入序），
+    与 preheat 的日期分桶可能指向不同活动——两个命令在同一份数据上打架。
+    """
+    from types import SimpleNamespace
+
+    from src.models import CampaignEvent
+
+    # stage 乱序（future 先出现），真实日期次序才是目标：应指向 10-16 的秋日限定
+    campaigns = [
+        CampaignEvent(date="2026-10-25", title="周末欢乐桶限时回归", stage="future"),
+        CampaignEvent(date="2026-10-09", title="超值9.9元早餐两件套", stage="today"),
+        CampaignEvent(date="2026-10-16", title="秋日限定新品上新", stage="future"),
+    ]
+    a = SimpleNamespace(raw=SimpleNamespace(
+        campaigns=campaigns, server_time="2026-10-09 16:48:16"))
+    hint = cli._preheat_hint(a)
+    assert "秋日限定新品上新" in hint, f"回流量应指向最近的未来活动，实际 {hint}"
+    assert "周末欢乐桶" not in hint
+
+
+def test_preheat_hint_handles_no_future():
+    from types import SimpleNamespace
+
+    a = SimpleNamespace(raw=SimpleNamespace(campaigns=[], server_time=""))
+    assert cli._preheat_hint(a) == ""
 
 
 # ---------------------------------------------------------------------- #
@@ -228,6 +274,99 @@ def _write_cfg(path: Path, token: str) -> None:
     path.write_text(json.dumps({"mcpServers": {"mcd-mcp": {
         "type": "streamablehttp", "url": "https://mcp.mcd.cn",
         "headers": {"Authorization": f"Bearer {token}"}}}}), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------- #
+# 5) 首次使用：没 Token 的体验
+# ---------------------------------------------------------------------- #
+def test_remote_command_without_token_shows_setup_guide(monkeypatch):
+    """全新用户直接 `eat`：不能只抛 403，必须说清去哪申请、填到哪、怎么自检。"""
+    monkeypatch.delenv("MCD_MCP_TOKEN", raising=False)
+    with tempfile.TemporaryDirectory() as d:
+        monkeypatch.setattr(Path, "home", lambda: Path(d) / "nohome")
+        monkeypatch.setattr(cli, "ROOT", Path(d))
+        code, out = _run_exit(["eat"])
+    assert code == 2, "没有 Token 时应明确失败，而不是继续执行"
+    assert "open.mcd.cn" in out
+    assert "export MCD_MCP_TOKEN" in out
+    assert "doctor" in out
+    assert "403" not in out, "别把原始 HTTP 错误丢给用户"
+
+
+def test_doctor_without_token_explains_and_is_not_a_failure(monkeypatch):
+    """`doctor` 是诊断命令：没 Token 时给出指引，但**不该**以失败退出。"""
+    monkeypatch.delenv("MCD_MCP_TOKEN", raising=False)
+    with tempfile.TemporaryDirectory() as d:
+        monkeypatch.setattr(Path, "home", lambda: Path(d) / "nohome")
+        monkeypatch.setattr(cli, "ROOT", Path(d))
+        code, out = _run_exit(["doctor"])
+    assert code == 0
+    assert "没找到" in out
+    assert "open.mcd.cn" in out
+
+
+def test_doctor_offline_does_not_nag_about_token(monkeypatch):
+    """`--offline doctor` 是离线自检：不该反过来催用户配 Token。"""
+    monkeypatch.delenv("MCD_MCP_TOKEN", raising=False)
+    out = _run(["--offline", "doctor"])
+    assert "已跳过" in out
+    assert "还差一步" not in out
+
+
+def test_doctor_never_prints_the_token_itself(monkeypatch):
+    """自检报告会被贴进 issue / 群里——Token 原文绝不能出现在输出中。"""
+    monkeypatch.setenv("MCD_MCP_TOKEN", "SUPERSECRETTOKEN12345")
+    monkeypatch.setattr(cli.McdMcpClient, "list_tools", lambda self: [])
+    out = _run(["doctor"])
+    assert "SUPERSECRETTOKEN12345" not in out
+    assert "SUPE" in out and "2345" in out      # 只留首尾各 4 位
+
+
+def test_doctor_reports_missing_tools(monkeypatch):
+    """连上了但工具不全，要指名缺哪些——否则会变成「跑一半静默少数据」。"""
+    monkeypatch.setenv("MCD_MCP_TOKEN", "SUPERSECRETTOKEN12345")
+    monkeypatch.setattr(cli.McdMcpClient, "list_tools",
+                        lambda self: [{"name": "order-list"}])
+    out = _run(["doctor"])
+    assert "缺" in out
+    assert "calculate-price" in out
+
+
+def test_http_401_becomes_actionable_auth_error(monkeypatch):
+    """401/403 必须翻译成「去配 Token」，且单独成类（该配凭据，不是该重试）。"""
+    import requests
+
+    class _Resp:
+        status_code = 401
+        headers: dict = {}
+        text = "{}"
+
+        def raise_for_status(self):
+            raise requests.HTTPError("401 Client Error", response=self)
+
+    monkeypatch.setattr(mcp_client.requests, "post", lambda *a, **k: _Resp())
+    with pytest.raises(mcp_client.McpAuthError) as excinfo:
+        mcp_client.McdMcpClient(token="x").call_tool("now-time-info")
+    assert "open.mcd.cn" in str(excinfo.value)
+
+
+def test_non_auth_http_error_stays_a_plain_mcp_error(monkeypatch):
+    """不能为了「友好」把所有 HTTP 错误都说成凭据问题——500 就是 500。"""
+    import requests
+
+    class _Resp:
+        status_code = 500
+        headers: dict = {}
+        text = "{}"
+
+        def raise_for_status(self):
+            raise requests.HTTPError("500 Server Error", response=self)
+
+    monkeypatch.setattr(mcp_client.requests, "post", lambda *a, **k: _Resp())
+    with pytest.raises(mcp_client.McpError) as excinfo:
+        mcp_client.McdMcpClient(token="x").call_tool("now-time-info")
+    assert not isinstance(excinfo.value, mcp_client.McpAuthError)
+    assert "doctor" not in str(excinfo.value)
 
 
 # ---------------------------------------------------------------------- #

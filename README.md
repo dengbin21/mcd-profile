@@ -1,4 +1,4 @@
-# 麦麦档案 · McProfile
+# 麦麦战绩 · McProfile
 
 > **先替你算出最划算的那一单，再帮你复盘吃过的每一单。**
 >
@@ -47,18 +47,30 @@ list-nutrition-foods  最优解的营养
 本地估算**只用于排序，最终价格一律以官方为准**，绝不拿估算当结果。
 （`--top` 控制验价次数，`--workers` 让这 30 次并发跑，实测 6.2s → 1.7s。）
 
+**预算 × 热量双约束**：`--budget` 限实付、`--kcal` 限热量（如 `--kcal 800`
+= 这顿别超 800 大卡）——枚举阶段就剪掉超限组合，报告还会给出「每元热量」性价比。
+热量按官方营养库匹配、覆盖率如实披露；查不到的商品按 0 计（**下界**，只剪已超限的，
+绝不误杀合规组合）。
+
+**券凭证码的边界（口径诚实）**：券的核销通常需要「券绑定的凭证商品码」，而官方卡包
+接口（`query-my-coupons`）实测不返回该字段；因此验价以官方**按账号自动匹配**的券价
+为准，联网战报中对此有显式披露——实付与你预期的券后价不符时，请到官方 App 确认。
+
 ```bash
 $ python -m src.cli solve --items 板烧鸡腿堡
 ```
 
-真实跑出来是这样（脱敏样例数据）：
+真实跑出来是这样（`--offline` 脱敏样例数据）：
 
 ```
 菜单 47 款 ｜ 券 8 张（可解析规则 6 条）
+必选：板烧鸡腿堡
+正在搜索最优组合（最多追加 3 件，预算 不限，验价并发 1）…
   [1/30]  验价 → 新的最优 ¥21.50
-  [2/30]  验价 → ¥21.90            ← 触发「三件任选6折」，多 2 件只多 4 毛
-  …
-  [30/30] 验价完成
+  [2/30]  验价 → 新的最优 ¥21.90   ← 触发「三件任选6折」，多 2 件只多 4 毛
+  [10/30] 验价中…
+  [20/30] 验价中…
+  [30/30] 验价中…
 
 直觉点法   1 件   ¥21.50   均价 ¥21.50
 算法最优解 3 件   ¥21.90   均价 ¥7.30
@@ -76,7 +88,7 @@ $ python -m src.cli solve --items 板烧鸡腿堡
 
 ## 钩子 · 麦麦预热台（McPreheat）
 
-> **距「周末欢乐桶限时回归」还有 15 天——但你有 1 张券 10-12 就到期了。**
+> **距「秋日限定新品上新」还有 7 天——但你有 1 张券 3 天后就到期。**
 > **这张券等不到那天。**
 
 `campaign-calendar` 在别人手里是个静态列表：把活动列出来，看完没有下文。
@@ -90,11 +102,17 @@ $ python -m src.cli solve --items 板烧鸡腿堡
 
 **券到期日 < 活动开始日 → 这张券赶不上。** 这条不是文案，是算出来的。
 
+到期时间有两个坑已经被真实接口打过脸并修掉了：券面 `availableTime` 会写成
+**区间**（`2026.10.05-2026.10.11`）——按**结束日**算，取第一段会把「明天到期」说成
+「5 天前已过期」，凭空多一条假冲突；也会写成**「今日」**——今天到期的券是本该最紧急的
+一张，读不懂就静默丢弃等于让它从卡片上消失，所以读不懂的券会**计数披露**。
+
 它同时给了三样东西，这正是「钩子」的构成：
 
 - **紧迫感**：倒计时（网页端实时到秒）
 - **行动理由**：哪些券必须先用掉，否则白攒
-- **可比较**：备战度 **S/A/B/C** 评分（券包撑不撑得住、积分够不够兑）
+- **可比较**：备战度 **S/A/B/C** 评分（券包撑不撑得住、积分够不够兑；
+  临期扣分**封顶**，手里一堆临期券不会被算成「裸奔进场」）
 
 ```bash
 $ python -m src.cli preheat
@@ -107,9 +125,12 @@ $ python -m src.cli preheat
 ⚠️ 等不到那天的券
   满30减5元券   2026.10.12 23:59   3 天后
 
+即将到期（7 天内）
+  免费香芋派   2026.10.16 23:59   7 天后
+
 ✅ 能撑到活动当天
-  免费香芋派（7 天后到期）⚠️ 压线
   免费中薯条（53 天后到期）
+  另有 1 张压线券（撑得到，但到期就在眼前），见上方临期清单
 ```
 
 > 免登录可玩：[site/index.html](site/index.html) 上的倒计时**实时走秒**。
@@ -254,13 +275,31 @@ Token 三种配法，命中即停，优先级从高到低：
 另外它里面的 `Bearer ${MCD_MCP_TOKEN}` 是**本项目 CLI 自己**展开的占位符，
 多数 MCP 客户端不支持 `${}` 展开，直接拷进客户端会拿到字面量从而 401，客户端里请填真值。
 
+**配好之后先自检**（装完第一件该跑的事）：
+
+```bash
+python -m src.cli doctor
+```
+
+它会一次性报出：Token 找没找到、**从哪个文件找到的**、能不能连上、依赖的 20 个只读工具缺哪几个。
+Token 只显示首尾各 4 位，输出可以安全地贴进 issue。
+
+没配 Token 时，联网命令不会丢给你一个 `403 Forbidden`——而是打印
+「去哪申请 / 填到哪 / 怎么自检」并以退出码 2 结束：
+
+```
+1) 申请 Token：https://open.mcd.cn/mcp
+2) 填进来：export MCD_MCP_TOKEN=<你的 Token>
+3) 自检：python -m src.cli doctor
+```
+
 > 没有 Token 也能体验：`demo` 命令用随项目附带的**脱敏样例数据**离线生成完整档案，
 > 或直接开在线版 https://mcsolve.app.workbuddy.host/ （免登录、免 Token）。
 
 ## 5. 使用示例
 
 ```bash
-# 生成你的麦麦档案（联网读取真实数据，调用 20 个官方工具）
+# 生成你的麦麦战绩（联网读取真实数据，调用 20 个官方工具）
 python -m src.cli archive
 
 # 同时导出分享卡片（HTML + PNG）与 Markdown 档案
@@ -341,8 +380,12 @@ mcd-profile/
 │   ├── menu_view.py          # 可视化点餐菜单 HTML（带图带价 + 点选导出点餐话术 / code:qty）
 │   ├── images.py             # 商品图工具（下载缓存 / 转 data-uri / 读为数组，全程降级）
 │   ├── textpack.py           # 文案层（WorkBuddy 在环：brief→copy_pack→注入渲染）
+│   ├── solver.py             # McSolve 组合求解器（本地枚举→Top-30 官方验价）
+│   ├── solve_report.py       # 最优解战报渲染（MD / HTML）
+│   ├── preheat.py            # McPreheat 预热台（活动 × 券到期冲突 + 备战度）
+│   ├── preheat_report.py     # 预热卡渲染（MD / HTML）
 │   ├── archive.py            # 采集→分析→人格 聚合（可并入本次战报）+ 工具覆盖清单
-│   ├── report/               # 渲染包：base（共享）/ markdown / html / png 三渲染器
+│   ├── report/               # 渲染包：tokens（公共设计）/ base / markdown / html / png
 │   └── cli.py                # 命令行入口（archive/.../eat/stores/menu/brief，只做编排与展示）
 ├── data/
 │   ├── nutrition_snapshot.json   # 160 条营养快照
@@ -350,13 +393,18 @@ mcd-profile/
 │   ├── archive_sample.json       # 脱敏样例权益（积分/券/抽奖/兑换）
 │   ├── scene_sample.json         # 脱敏样例场景（门店/地址/常点/算价）
 │   ├── marketing_sample.json     # 脱敏样例活动
+│   ├── menu_sample.json          # 脱敏样例菜单（McSolve 离线求解用）
 │   └── meal_report_sample.json   # 脱敏样例「本次点餐战报」（供 demo 展示合体档案）
 └── examples/
     ├── demo_profile.md
     ├── profile_card.html
     ├── profile_card.png
     ├── copy_brief.json        # 文案素材样例（brief 产物，交给 WorkBuddy）
+    ├── copy_brief_solve.json  # solve 场景文案素材样例
+    ├── copy_brief_preheat.json# preheat 场景文案素材样例
     ├── copy_pack.json         # 文案包样例（WorkBuddy 产物：称号/文案 + labels/radar/badge_title，供 --copy）
+    ├── solve_report.html      # McSolve 战报示例产物
+    ├── preheat_report.html    # McPreheat 预热卡示例产物
     ├── menu_img/              # 商品图本地缓存（下载后内嵌进卡片，可忽略）
     ├── menu_<store>.html      # 可视化点餐菜单（menu 产物：带图带价，点选导出下单清单）
     └── eat_report.html/.png   # 点餐战报分享档案（eat 产物，含商品缩略图，HTML 自包含 / 竖版长图）
@@ -402,7 +450,7 @@ mcd-profile/
 
 ## 9. 支持一下
 
-如果这份「麦麦档案」让你想晒一张，**点个 Star 就是最大的支持**：
+如果这份「麦麦战绩」让你想晒一张，**点个 Star 就是最大的支持**：
 
 **⭐ [github.com/dengbin21/mcd-profile](https://github.com/dengbin21/mcd-profile)**
 

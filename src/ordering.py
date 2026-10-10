@@ -192,7 +192,13 @@ def quote(client: McdMcpClient, session: OrderingSession, cart: list[CartItem],
     """调用 calculate-price，返回实付/原价/优惠 + 取餐方式列表。价格单位：分→元。"""
     if not cart:
         raise McpError("购物车为空，无法算价")
-    items = [{"productCode": i.product_code, "quantity": i.quantity} for i in cart]
+    items = []
+    for i in cart:
+        item = {"productCode": i.product_code, "quantity": i.quantity}
+        # 券 id 是可选透传字段：带了就传给官方（如 McSolve 想指定某张券核销）
+        if i.coupon_id:
+            item["couponId"] = i.coupon_id
+        items.append(item)
     data = client.call_tool("calculate-price", {
         "storeCode": session.store_code, "orderType": session.order_type,
         "beType": session.be_type, "items": items,

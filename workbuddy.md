@@ -1,6 +1,6 @@
 # WorkBuddy 开发对话上下文 · workbuddy.md
 
-> 本文记录使用 **WorkBuddy** 开发「麦麦档案 McProfile」过程中的关键对话与决策，
+> 本文记录使用 **WorkBuddy** 开发「麦麦战绩 McProfile」过程中的关键对话与决策，
 > 用于核验是否符合 WorkBuddy 联动活动奖励条件。
 
 ## 一、项目背景
@@ -20,7 +20,7 @@
    - 关键发现：**33 个在册作品里，70% 挤在「省钱」+「营养」两条赛道**，全部都在
      「吃之前」竞争；而 MCP 里整整一层**「订单后」能力**（`order-list`、`query-order`、
      `cancel-order`、`query-survey-coupon`、`mall-order-*`）几乎无人使用。
-   - 决策：**避开红海，做「订单后复盘」这一白地**——即「麦麦档案」。
+   - 决策：**避开红海，做「订单后复盘」这一白地**——即「麦麦战绩」。
 
 3. **数据侦察（真实联调）**
    - `order-list` → 实测返回 **10 条真实历史订单**，字段含
@@ -57,7 +57,7 @@
    - `src/textpack.py`：**文案层（WorkBuddy 在环）**——文本注册表（除数值外全部文字的单一事实源）+ `brief` 导出素材 → 模型写 `copy_pack.json` → `--copy` 注入，覆盖人格称号、区块标题、指标名、雷达维度、徽章名等；无外部 Key。
    - `src/report/`：Markdown 档案 + **暗黑潮酷** HTML / **竖版长图** PNG + 工具覆盖清单。
    - `src/archive.py`：采集→分析→人格聚合（可并入**本次战报**）。
-   - `src/cli.py`：命令行入口，共 15 个子命令（archive / orders / savings / account / campaign / store / tools / card / demo / brief / stores / menu / eat / **preheat** / **solve**）。
+   - `src/cli.py`：命令行入口，共 16 个子命令（archive / orders / savings / account / campaign / store / tools / card / demo / brief / **doctor** / stores / menu / eat / **preheat** / **solve**）。
 
 5. **工程打磨**
    - **套餐口径**：发现订单里既有单品也有套餐，遂按 `comboItemList` **拆件计营养**，
@@ -209,7 +209,53 @@ python -m pytest tests/ -q
 - `site/index.html`：**零门槛落地页**，免登录免 Token 即可玩求解器与实时倒计时；
   用 `tests/test_site_parity.py`（抽取页面内联 JS 与 Python 比对）防止两份实现漂移。
 - 已发布上线：**https://mcsolve.app.workbuddy.host/**
-- 测试从 59 → 103 项，全绿；`git` 已推送到 `dengbin21/mcd-profile`。
+- 测试从 59 → 119 项，全绿；`git` 已推送到 `dengbin21/mcd-profile`。
+
+### 6. 首用体验：让「没 Token」不再是一行 403
+
+- 用户问「别人装好这个 Skill 后怎么用」时描述的预期是：**没 Token 就提示去配，有 Token 直接走点餐**。
+  实测发现当时完全不是这么回事——没配 Token 时 mcd-mcp 只回 `403 Forbidden`，
+  既不说明缺什么，也不说去哪申请、填到哪里。这是「产品能不能被别人用起来」的硬门槛。
+- CLI 侧：
+  - 新增 `doctor` 子命令（环境自检）：Token 找没找到 + **从哪个文件找到的** + 连不连得上 +
+    依赖的 20 个只读工具缺哪几个；Token 只显示首尾各 4 位，输出可安全贴进 issue。
+  - `McpAuthError` 单独成类：401/403 翻译成「申请/续期 Token + 跑 doctor」；
+    其余 HTTP 错误保持原样——不为「友好」掩盖真实问题（500 就是 500）。
+  - `main()` 前置检查：联网命令无 Token 时打印「去哪申请 / 填到哪 / 怎么自检」并退出码 2。
+- Skill 侧：`SKILL.md` 补「没连上时怎么引导用户」——**先自检再决定走玩法还是引导配置**，
+  明确禁止用历史数据或常识凑答案，也禁止在用户配置期间编造菜单与价格。
+- 四个场景实测：无 Token / Token 无效（401）/ 本机真实 Token（35 个工具，20 个依赖全在）/ 离线自检。
+- 测试 112 → 119（新增 7 项首用体验测试）。
+
+### 7. 真实数据验收：预热台被官方接口打了三次脸
+
+用「我要吃麦当劳」这条真实链路跑通预热台时（`doctor` → 选店 → `preheat`），
+拿本机真实券包一比对，发现卡片上的结论是错的——三处都是**只在真实数据上才会暴露**的问题：
+
+1. **区间到期被误判为已过期（P0）**：`query-my-coupons` 的 `availableTime` 返回
+   `2026.10.05-2026.10.11`，解析器只取前三个数字段 → 当成 10-05 到期。
+   于是这张**明天才到期、正好撑得到活动**的券被写成「已过期、等不到那天」，
+   备战度还被白扣 25 分。修法：新增 `parse_until()` 把区间**分段抠全并取结束日**，
+   活动日期仍用 `parse_when()` 取开始日——两处语义不同，不能共用一种取法。
+2. **「今日」到期的券静默消失（P1）**：官方把今天到期的券写成「今日」，解析失败后
+   不进任何清单——最紧急的一张券从卡片上人间蒸发。修法：认「今日/今天」，
+   其余读不懂的标 `unparsed` 并新增 `coupon_unparsed_count` 计数披露。
+3. **备战度语义被算反（P1）**：临期券每张 -10 且不封顶 → 手里 10 张券（9 张临期）
+   直接扣到 0 分「裸奔进场，建议先清券」，可这人恰恰是全场弹药最足的。
+   修法：`URGENT_CAP = 3`，临期扣分封顶。修完从 C(0/100) 变成 B(55/100)。
+
+顺带收敛两处一致性：`analysis._parse_expire` 原本用 `re.search` 取第一处（同一个区间坑），
+改为复用 `parse_until`，避免「同一张券在档案里已过期、在预热台里还活着」；
+「能撑到活动当天」清单不再把压线券抄第二遍（活动只剩 1 天时两节 10/10 完全重叠），
+改为只列真正安全的 + 注明「另有 N 张压线券」。
+
+- 落地页 `site/index.html` 里**独立实现了一份**预热台（`pd` 抄的是旧解析器、评分也没封顶），
+  已同步改成 `pdAll/pd/pu` 三件套 + `URGENT_CAP`；并在 `test_site_parity.py` 新增
+  `test_site_date_parsing_matches_python`，把 JS 的 `pd/pu` 与 Python 的
+  `parse_when/parse_until` 对 **10 种日期写法**逐条比对——同一份页面数据喂给两边。
+  已反向验证过这道护栏有效：故意把 `pu` 改回取首段，测试立刻红。
+- 测试 126 → 133（新增 7 项回归：区间取结束日、今日到期可见、读不懂要披露、
+  临期扣分封顶、存活清单不重复、页面日期解析同口径；MD 与 HTML 同口径也一并断言）。
 
 ## 五、小结
 

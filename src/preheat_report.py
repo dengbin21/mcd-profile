@@ -39,6 +39,9 @@ def _expire_text(c: CouponWatch, tx: TextResolver) -> str:
         return tx("ph.lbl_dash")
     if left < 0:
         return tx("ph.lbl_expired")
+    if left == 0:
+        # 「0 天后」没人看得懂——今天到期就说今天。
+        return tx("ph.lbl_today")
     return tx("ph.lbl_expire_in", n=left)
 
 
@@ -60,6 +63,11 @@ def render_preheat_markdown(pre: Preheat, copy: CopyPack | None = None) -> str:
     # 而 campaign 命令（按官方 stage 字段分桶）照常显示——两处对不上就是 bug。
     if pre.unparsed_count:
         lines.append(f"> {tx('ph.unparsed_note_full', n=pre.unparsed_count)}\n")
+
+    # 券侧同理：到期文案读不懂的券不能默默消失——
+    # 真实接口里「今日」到期的那张券就差点这么人间蒸发。
+    if pre.coupon_unparsed_count:
+        lines.append(f"> {tx('ph.coupon_unparsed_full', n=pre.coupon_unparsed_count)}\n")
 
     # ---- 倒计时 ----
     if pre.target:
@@ -92,12 +100,17 @@ def render_preheat_markdown(pre: Preheat, copy: CopyPack | None = None) -> str:
         lines.append("")
 
     if pre.surviving:
+        # 压线券已经在「即将到期」里列过一遍，这里再列就是**同一批券抄两遍**
+        # （活动只剩 1 天时两节会完全重叠）。只补上真正安全的那部分。
+        safe = [c for c in pre.surviving if not c.tight]
         lines.append(f"## {tx('ph.sec_surviving')}\n")
-        for c in pre.surviving[:8]:
+        for c in safe[:8]:
             tail = f"（{_expire_text(c, tx)}到期）" if c.days_to_expire is not None else ""
-            if c.tight:
-                tail += f" ⚠️ {tx('ph.lbl_press')}"
             lines.append(f"- ✅ {c.title}{tail}")
+        tight_n = len(pre.surviving) - len(safe)
+        if tight_n:
+            lines.append("")
+            lines.append(f"_{tx('ph.surviving_note', n=tight_n)}_")
         lines.append("")
 
     # ---- 积分 ----
@@ -247,8 +260,14 @@ def render_preheat_html(pre: Preheat, copy: CopyPack | None = None) -> str:
 
     ok_html = ""
     if pre.surviving:
+        # 与 Markdown 同口径：压线券不在这里重复列一遍，只补真正安全的那部分。
+        safe = [c for c in pre.surviving if not c.tight]
+        tight_n = len(pre.surviving) - len(safe)
+        note = (f"<div style='margin-top:10px;font-size:13px;color:#98938B'>"
+                f"{_esc(tx('ph.surviving_note', n=tight_n))}</div>") if tight_n else ""
+        body = _coupon_rows(safe[:8], bad=False, tx=tx) if safe else ""
         ok_html = (f"<div class='sec'><div class='h'>{_esc(tx('ph.sec_surviving'))}</div>"
-                   + _coupon_rows(pre.surviving[:8], bad=False, tx=tx) + "</div>")
+                   + body + note + "</div>")
 
     # ---- 备战度 ----
     score_html = (
@@ -299,6 +318,11 @@ def render_preheat_html(pre: Preheat, copy: CopyPack | None = None) -> str:
         f"{_esc(tx('ph.unparsed_note_html'))}</div>"
         if pre.unparsed_count else ""
     )
+    # 券侧：读不懂到期日的券不能悄悄不显示，否则用户以为自己没这张券。
+    coupon_unparsed_html = (
+        f"<div class='note'>⚠️ {_esc(tx('ph.coupon_unparsed_html', n=pre.coupon_unparsed_count))}</div>"
+        if pre.coupon_unparsed_count else ""
+    )
 
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
@@ -314,6 +338,7 @@ def render_preheat_html(pre: Preheat, copy: CopyPack | None = None) -> str:
   {('<div class="sub">' + _esc(tx('ph.lbl_data_time', t=pre.server_time)) + '</div>') if pre.server_time else ''}
   {count_html}
   {unparsed_html}
+  {coupon_unparsed_html}
 </div>
 
 {danger_html}

@@ -1,13 +1,13 @@
 ---
 name: mcd-profile
 version: 2.0.1
-display_name: "麦麦档案"
+display_name: "麦麦战绩"
 display_name_en: "McProfile"
 description: "围绕麦当劳官方 MCP 的一套「吃之前 → 吃之后」闭环：McSolve 先用官方 calculate-price 反复验价，算出这一单怎么点最划算（全程只读、不产生订单）；McPreheat 把活动日历和券到期日交叉，告诉你哪些券等不到活动那天；吃完再用 archive 把每一单变成『消费 × 省钱 × 健康 × 权益』复盘 + 麦门人格卡。用于『这单怎么点最划算 / 我的券什么时候到期、赶得上活动吗 / 我在麦当劳花了/省了多少、吃了多少热量 / 我的麦门人格 / 帮我点一份』等场景。依赖 mcd-mcp MCP 服务，覆盖官方 20 个只读工具 +（可选、默认关闭）1 个下单工具。"
 license: MIT
 ---
 
-# 麦麦档案 (McProfile)
+# 麦麦战绩 (McProfile)
 
 不做只会点餐的助手，而做**一条从「吃之前」到「吃之后」的闭环**：
 
@@ -26,6 +26,7 @@ license: MIT
 
 | 用户说 | 走哪条 |
 |---|---|
+| 「我要吃麦当劳」「帮我点个麦当劳」 | **先做连接自检**：已连上 → 直接走点餐闭环；没连上 → 引导配 Token（见《环境准备》） |
 | 「这单怎么点最划算」「帮我算算买什么最省」「我想吃 X，怎么点」 | **McSolve**（`query-meals` + `calculate-price` ×N） |
 | 「我的券什么时候到期」「下周活动我的券还能用吗」「帮我备战」 | **McPreheat**（`campaign-calendar` × `query-my-coupons`） |
 | 「我在麦当劳花了/省了多少钱」「吃了多少热量」「我的麦门人格」 | 档案复盘（`order-list` → 六维画像） |
@@ -61,6 +62,28 @@ license: MIT
 `Bearer ${MCD_MCP_TOKEN}` 占位符，`${}` 展开是本项目 CLI 自己的行为，
 多数 MCP 客户端不支持，直接拷过去会拿到字面量从而 401。
 
+4. **自检**（每轮任务开工前值得花这一步）：调一次 `now-time-info`，
+   能拿到服务器时间就是连上了。命令行用户可跑 `python -m src.cli doctor`，
+   它一次性报出：Token 找没找到、从哪个文件找到的、能不能连上、
+   依赖的 20 个只读工具缺哪几个（Token 只显示首尾各 4 位，可安全粘贴到 issue）。
+
+### 没连上时，怎么引导用户
+
+用户说「我要吃麦当劳」但 `mcd-mcp` 没连上（工具列表里没有 `calculate-price`，
+或调用报 401/403）时：**不要用历史数据或常识凑答案**，也不要让用户盲目重试。按序说：
+
+1. 说明原因：这个 Skill 的全部数据来自麦当劳官方 MCP，需要一个 Token；
+2. 给出申请地址 **https://open.mcd.cn/mcp**；
+3. 给出要填的那段配置（`mcd-mcp` / `https://mcp.mcd.cn` /
+   `Authorization: Bearer <Token>`），并强调**填真值**——照抄仓库里的
+   `${MCD_MCP_TOKEN}` 占位符会 401；
+4. 提醒填完需重启客户端，再让你试一次；
+5. 等用户配置期间，**不要**编造菜单、价格或优惠。
+
+> **先确认连不连得上，再决定走玩法还是引导配置**——别一上来就让人去申请 Token，
+> 对方很可能早就配好了。命令行侧同理：联网命令在没 Token 时会直接打印
+> 「去哪申请 / 填到哪 / 怎么自检」并以退出码 2 结束，不会丢一个 403 给你。
+
 ## 一、McSolve：把 `calculate-price` 当「价格预言机」
 
 全场都把 `calculate-price` 当「下单前的最后一步」：调一次，看看多少钱，然后下单，用完即弃。
@@ -95,8 +118,17 @@ now-time-info       服务器时间（倒计时与「今天」的锚点）
 ```
 
 钩子是**「有些券等不到活动那天」**：券到期日 < 活动开始日即冲突。
-产出倒计时 + 冲突清单 + **备战度 S/A/B/C**（扣分重、加分轻，避免「有冲突却评 S」的自相矛盾）。
-日期解析不出时**披露 `unparsed_count`**，不说「没有可预热的活动」。
+产出倒计时 + 冲突清单 + **备战度 S/A/B/C**（扣分重、加分轻，避免「有冲突却评 S」的自相矛盾；
+**临期扣分封顶 3 张**——手里一堆临期券是弹药足，不是「裸奔进场」）。
+
+券的到期文案有两个**真实接口踩出来**的坑，按下面口径处理：
+
+- **区间写法**（`2026.10.05-2026.10.11`）按**结束日**算到期：取第一段会把
+  「明天到期」判成「5 天前已过期」，凭空多出一条根本不存在的冲突；
+- **「今日」**= 今天到期（明确无歧义，直接采用）；其余读不懂的**计数披露**——
+  今天到期的券本该是最紧急的一张，静默丢弃等于让它从卡片上消失。
+
+活动日期解析不出时**披露 `unparsed_count`**，不说「没有可预热的活动」。
 
 ## 能力与工具映射（官方 20 只读工具 + 1 可选写）
 
@@ -207,6 +239,9 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 ```bash
 export MCD_MCP_TOKEN=<你的麦当劳 MCP Token>
 
+# —— 首次使用：环境自检（Token 从哪找到的 / 连不连得上 / 缺哪些工具）——
+python -m src.cli doctor
+
 # —— 吃之前：算这一单怎么点最划算（全程只读，不产生订单）——
 python -m src.cli solve --items 板烧鸡腿堡 巨无霸        # 出最优解 + 战报长图
 python -m src.cli solve --items 板烧鸡腿堡 --add 3 --top 30 --budget 60
@@ -233,6 +268,7 @@ python -m src.cli solve --items 板烧鸡腿堡 --copy copy_pack_solve.json
 python -m src.cli preheat --copy copy_pack_preheat.json
 ```
 
-子命令共 15 个：`archive` `orders` `savings` `account` `campaign` `store` `tools` `card`
-`demo` `brief` `stores` `menu` `eat` `preheat` `solve`（`demo` / `--offline` 跑脱敏样例数据）。
+子命令共 16 个：`archive` `orders` `savings` `account` `campaign` `store` `tools` `card`
+`demo` `brief` `doctor` `stores` `menu` `eat` `preheat` `solve`
+（`demo` / `--offline` 跑脱敏样例数据；`doctor` 做环境自检）。
 闭环上的四个入口（`preheat` / `solve` / `eat` / `archive`）跑完会给**下一步建议**。

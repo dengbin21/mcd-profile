@@ -1,6 +1,6 @@
 """五维画像分析：消费 / 健康 / 权益 / 省钱 / 习惯 / 活动。
 
-这是「麦麦档案」的分析核心——把原始订单与权益数据，翻译成可读、可分享的洞察。
+这是「麦麦战绩」的分析核心——把原始订单与权益数据，翻译成可读、可分享的洞察。
 """
 from __future__ import annotations
 
@@ -124,12 +124,15 @@ def analyze_health(orders: list[Order], index: NutritionIndex) -> Health:
     for o in valid:
         oh = OrderHealth(date=o.date, store_name=o.store_name, kcal=0, protein=0,
                          fat=0, carbohydrate=0, sodium=0)
+        oh_matched = oh_total = 0
         for name, qty in o.flat_items():
+            oh_total += 1
             item_total += 1
             food = index.match(name)
             if food is None:
                 h.unmatched.append(name)
                 continue
+            oh_matched += 1
             matched_total += 1
             oh.kcal += food.energyKcal * qty
             oh.protein += food.protein * qty
@@ -137,7 +140,8 @@ def analyze_health(orders: list[Order], index: NutritionIndex) -> Health:
             oh.carbohydrate += food.carbohydrate * qty
             oh.sodium += food.sodium * qty
             sodium_counter[name] += food.sodium * qty
-        oh.matched, oh.total_items = matched_total, item_total
+        # 命中/总数必须按「这一单」计，不能用全局累计值（否则后一单永远 ≥ 前一单）
+        oh.matched, oh.total_items = oh_matched, oh_total
         h.per_order.append(oh)
         days.add(o.date)
 
@@ -320,12 +324,17 @@ class Benefit:
 
 
 def _parse_expire(text: str):
-    """把 '2026.10.16 23:59' 解析为可比较的 (y,m,d)。"""
-    import re
-    m = re.search(r"(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})", text or "")
-    if not m:
-        return None
-    return tuple(int(x) for x in m.groups())
+    """把 '2026.10.16 23:59' 解析为可比较的 (y,m,d)。
+
+    与预热台共用 ``parse_until``：券面 ``2026.10.05-2026.10.11`` 这类
+    **区间**写法取**结束日**。早先这里用 ``re.search`` 只取第一处，
+    同一张券在档案里被算成「已过期」而排除出临期清单、在预热台里却还活着——
+    同一个产品两处口径打架，这是必须收敛的那种不一致。
+    """
+    from .preheat import parse_until                                        # noqa: PLC0415
+
+    d = parse_until(text or "")
+    return (d.year, d.month, d.day) if d else None
 
 
 def analyze_benefit(arch: RawArchive, today: tuple[int, int, int] | None = None) -> Benefit:

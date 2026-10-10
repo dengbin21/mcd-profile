@@ -24,7 +24,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.models import CampaignEvent, Coupon, MenuItem                     # noqa: E402
-from src.preheat import build_preheat                                      # noqa: E402
+from src.preheat import build_preheat, parse_until, parse_when             # noqa: E402
 from src.solver import make_offline_pricer, parse_coupons, solve           # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,6 +32,12 @@ SITE = ROOT / "site" / "index.html"
 
 # 预热台比对的注入日期：覆盖「有冲突」「冲突变多」「活动已过完」三种状态
 PREHEAT_DAYS = ["2026-10-09", "2026-10-20", "2026-11-01"]
+
+# 日期解析比对取样：覆盖区间 / 单一日期 / 带时刻 / 中文 / 「今日」/ 读不懂
+# 「区间」这条是真实接口打出来的坑，页面和 CLI 里各埋了一份，只修一边等于没修。
+DATE_SAMPLES = ["2026.10.16 23:59", "2026-10-16", "2026/10/16", "2026-10-09T16:48:16",
+                "2026.10.05-2026.10.11", "2026.10.11-2026.10.11",
+                "10月16日", "今日", "长期有效", ""]
 
 # 与页面里的 MAX_ADD(=3) 保持一致；top_n 放大到不裁剪，以隔离「只验 Top30」的差异
 CASES = [
@@ -176,6 +182,54 @@ def test_site_preheat_matches_python():
         assert (pre.target.title if pre.target else None) == js["target"]
         assert [c.title for c in pre.missing] == js["missing"], f"{day} 冲突券不一致"
         assert [c.title for c in pre.surviving] == js["surviving"], f"{day} 可用券不一致"
+
+
+def _run_js(core: str, tail: str) -> str:
+    """把 ``tail`` 拼到页面核心 JS 后面跑一遍，返回最后一行 stdout。"""
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as fh:
+        fh.write(core + "\n" + tail)
+        path = fh.name
+    try:
+        proc = subprocess.run([_node(), path], capture_output=True, text=True, timeout=60)
+    finally:
+        Path(path).unlink(missing_ok=True)
+    assert proc.returncode == 0, f"node 执行失败：{proc.stderr[:500]}"
+    return proc.stdout.strip().splitlines()[-1]
+
+
+def test_site_date_parsing_matches_python():
+    """JS 的 ``pd`` / ``pu`` 与 Python 的 ``parse_when`` / ``parse_until`` 必须同口径。
+
+    券面到期写成区间 ``2026.10.05-2026.10.11`` 时，取首段会把它判成「5 天前已过期」。
+    这个坑在页面 JS 和 CLI 里**各埋了一份**，靠人肉同步迟早只修一边——
+    页面演示里的券到期时间与 CLI 算出来的对不上，而没有任何既有测试会变红。
+    """
+    node = _node()
+    if not node:
+        print("  ~ 未找到 node，跳过日期解析一致性校验")
+        return
+
+    tail = (
+        "const iso=d=>d?d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')"
+        "+'-'+String(d.getDate()).padStart(2,'0'):null;\n"
+        f"const out=[];\nfor(const s of {json.dumps(DATE_SAMPLES, ensure_ascii=False)}) {{\n"
+        "  out.push([s, iso(pd(s)), iso(pu(s))]);\n}\n"
+        "console.log(JSON.stringify(out));\n"
+    )
+    rows = json.loads(_run_js(_site_script(), tail))
+    assert len(rows) == len(DATE_SAMPLES), "取样条数对不上，harness 可能没跑全"
+
+    for s, js_first, js_last in rows:
+        py_first, py_last = parse_when(s), parse_until(s)
+        assert (py_first.isoformat() if py_first else None) == js_first, (
+            f"活动日期解析不一致：{s!r}  JS {js_first} vs PY {py_first}")
+        assert (py_last.isoformat() if py_last else None) == js_last, (
+            f"券到期解析不一致：{s!r}  JS {js_last} vs PY {py_last}")
+
+    # 光「两边一致」还不够——一致地错更可怕，所以再钉死语义：区间取**结束日**
+    assert parse_until("2026.10.05-2026.10.11").isoformat() == "2026-10-11"
+    assert parse_when("2026.10.05-2026.10.11").isoformat() == "2026-10-05"
 
 
 def test_site_has_star_cta():

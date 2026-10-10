@@ -24,6 +24,45 @@ def test_offline_archive():
     assert 0 < a.health.coverage <= 100, "营养覆盖率应在 (0,100]"
 
 
+def test_sample_persona_is_deal_hunter():
+    """回归：新增候选人格不能抢走样例数据的「优惠猎人」（demo 示例依赖它）。"""
+    a = build_archive(None, use_remote=False)
+    assert a.persona.label == "优惠猎人", f"样例人格应保持 优惠猎人，实际 {a.persona.label}"
+
+
+def test_persona_no_order_fallback():
+    """无消费记录时人格必须诚实兜底（堵 M-TYPE 的「偏好问答」缺口，用权益/常点兜）。
+
+    曾经空订单会硬选「早餐仪式感大师」（0 证据），现在给可解释的「新兵/常点守门人/券包收藏家」。
+    """
+    from src.analysis import Consumption, Health
+    from src.persona import build_persona
+
+    empty_cons, empty_health = Consumption(), Health()
+
+    class _Benefit:
+        coupon_count = 0
+        available_point = 0.0
+
+        def __init__(self, coupon_count=0, available_point=0.0):
+            self.coupon_count = coupon_count
+            self.available_point = available_point
+
+    p = build_persona([], empty_cons, empty_health, benefit=None, frequent_name="")
+    assert p.label == "麦门新兵" and "新手期" in p.tags
+
+    p2 = build_persona([], empty_cons, empty_health, benefit=None,
+                       frequent_name="人气经典随心配")
+    assert p2.label == "常点守门人" and "人气经典随心配" in p2.one_liner
+
+    p3 = build_persona([], empty_cons, empty_health,
+                       benefit=_Benefit(coupon_count=3), frequent_name="")
+    assert p3.label == "券包收藏家"
+
+    # 雷达结构契约：六维全 0，渲染不崩
+    assert set(p.radar) == {"早餐魂", "夜宵力", "肉食力", "甜品力", "咖啡力", "省钱力"}
+
+
 def test_nutrition_match():
     idx = NutritionIndex(load_snapshot())
     assert idx.match("猪柳蛋麦满分") is not None
@@ -34,12 +73,34 @@ def test_nutrition_match():
     assert hit is not None and "玉米杯" in hit.productName
 
 
+def test_health_per_order_counts_not_cumulative():
+    """每张订单的营养命中/总数必须按「这一单」计，不能用全局累计值。
+
+    曾经 ``analyze_health`` 把 ``matched_total / item_total``（跨订单累计）塞进
+    ``OrderHealth``，导致后一单的总数永远 ≥ 前一单、总和大于全局商品数。
+    """
+    from src.analysis import analyze_health                                # noqa: PLC0415
+    from src.sources import _collect_sample                                # noqa: PLC0415
+
+    arch = _collect_sample()
+    h = analyze_health(arch.orders, NutritionIndex(load_snapshot()))
+
+    global_items = sum(sum(1 for _ in o.flat_items())
+                       for o in arch.orders if not o.is_refunded)
+    # 每单：命中 ≤ 总数（累计 bug 下后一单会无限膨胀，这个断言会炸）
+    for oh in h.per_order:
+        assert oh.matched <= oh.total_items
+        assert oh.total_items > 0
+    # 各单总数之和必须等于全局商品数（累计 bug 下和会远大于全局数）
+    assert sum(oh.total_items for oh in h.per_order) == global_items
+
+
 def test_persona_and_report():
     a = build_archive(None, use_remote=False)
     assert a.persona.label, "人格标签不应为空"
     assert a.persona.radar and all(0 <= v <= 100 for v in a.persona.radar.values())
     md = render_markdown(a)
-    assert "麦麦档案" in md and "消费画像" in md and "健康画像" in md
+    assert "麦麦战绩" in md and "消费画像" in md and "健康画像" in md
     html = render_card_html(a)
     assert "<svg" in html and a.persona.label in html
 
@@ -326,6 +387,43 @@ def test_quote_mismatch_guard():
     m.items["1440"] = MenuItem("1440", "酥酥多笋卷三件套", price=25.0)
     q = quote(_FakeClient(), sess, [CartItem("1440")], menu=m)
     assert q.mismatches == [("1440", "酥酥多笋卷三件套", "麦辣鸡腿汉堡")]
+
+
+def test_quote_passes_coupon_id():
+    """算价时若单品带券 id，必须透传给 calculate-price 的 ``items[].couponId``。"""
+    from src.ordering import OrderingSession, quote
+
+    captured: dict = {}
+
+    class _FakeClient:
+        def call_tool(self, name, arguments=None):
+            captured["args"] = arguments
+            return {"price": 1000, "originalPrice": 1200, "discount": 200,
+                    "takeWayList": [{"code": "1", "title": "堂食"}], "productList": []}
+
+    sess = OrderingSession(store_code="1990262")
+    quote(_FakeClient(), sess, [CartItem("1001", coupon_id="C-9")])
+    assert captured["args"]["items"][0]["couponId"] == "C-9"
+    # 没带券 id 时不发该字段
+    quote(_FakeClient(), sess, [CartItem("1001")])
+    assert "couponId" not in captured["args"]["items"][0]
+
+
+def test_parse_coupon_captures_identifier():
+    """官方卡包接口一旦返回券标识（couponId/code 等），parse_coupon 必须保留。
+
+    这是「券凭证商品码」风险的防御侧：接口不返回我们不编，返回了我们不漏。
+    """
+    from src.models import parse_coupon
+
+    c = parse_coupon({"title": "免费香芋派", "couponId": "C-123",
+                      "instructions": {"availableTime": [{"text": "2026.10.16 23:59"}]}})
+    assert c.coupon_id == "C-123"
+    assert c.available_until == "2026.10.16 23:59"
+    c2 = parse_coupon({"title": "免费中薯条", "code": "V-77"})
+    assert c2.coupon_id == "V-77"
+    c3 = parse_coupon({"title": "满30减5元券", "instructions": {"labels": [{"text": "外送"}]}})
+    assert c3.coupon_id == "" and c3.is_delivery
 
 
 def test_png_cjk_font():

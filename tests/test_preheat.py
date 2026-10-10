@@ -8,6 +8,14 @@
    整个钩子失效（预热台变成一张写着「就是今天」的废卡）；
 2. 备战度权重给得太松 → 3 张券里有 1 张赶不上活动，仍被评为 **S（弹药充足）**，
    和卡片上同时出现的「有 1 张券等不到那天」自相矛盾。
+
+后续在**真实接口**上又踩了三个，一并固化：
+
+3. 券面到期写成区间 ``2026.10.05-2026.10.11``，解析器只取第一段 →
+   明天才到期的券被判成「5 天前已过期」，凭空多一条假冲突；
+4. 到期写「今日」的券解析失败后被**静默丢弃** → 最紧急的一张券从卡片上人间蒸发；
+5. 临期券每张 -10 且不封顶 → 手里 10 张券的人被判 0 分「裸奔进场」，
+   「弹药最足」被算成「什么都没有」，语义整个反了。
 """
 import sys
 from datetime import date
@@ -17,7 +25,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.models import CampaignEvent, Coupon                               # noqa: E402
 from src.preheat import (                                                  # noqa: E402
-    build_preheat, parse_when, pick_target, remaining_parts,
+    URGENT_CAP, build_preheat, parse_until, parse_when, pick_target,
+    remaining_parts, urgent_penalty_count, watch_coupons,
 )
 from src.preheat_report import render_preheat_html, render_preheat_markdown  # noqa: E402
 
@@ -117,6 +126,25 @@ def test_tight_flag():
     assert tight == {"免费香芋派"}, f"香芋派 7 天内到期应压线，实际 {tight}"
 
 
+def test_brief_surviving_marks_tight_not_on_edge():
+    """文案素材里压线标记必须用真实属性 ``tight``，不能再引用不存在的 ``on_edge``。
+
+    回归：``build_preheat_brief`` 曾用 ``getattr(c, "on_edge", False)``，而
+    ``CouponWatch`` 的实际属性是 ``tight``——素材里「压线」恒为 False，WorkBuddy
+    拿到的事实失真。
+    """
+    from src.textpack import build_preheat_brief                           # noqa: PLC0415
+
+    pre = _pre()
+    brief = build_preheat_brief(pre)
+    surviving = brief["facts"]["surviving"]
+    assert surviving, "前置：样例应有存活券"
+    assert all("on_edge" not in s for s in surviving), "素材不应再带不存在的 on_edge 字段"
+    by_title = {s["title"]: s for s in surviving}
+    assert by_title["免费香芋派"]["tight"] is True
+    assert by_title["免费中薯条"]["tight"] is False
+
+
 def test_coupon_without_expiry():
     """没有到期时间的券：不参与冲突判断，也不该崩。"""
     cs = [Coupon(title="神秘券", available_until="")]
@@ -124,6 +152,98 @@ def test_coupon_without_expiry():
     assert p.coupons[0].until is None
     assert p.coupons[0].survives is None
     assert p.missing == []
+    assert p.coupons[0].unparsed is False, "压根没写到期时间，不算「读不懂」"
+
+
+# ---------------------------------------------------------------------- #
+# 真实接口踩出来的坑（3 / 4 / 5）
+# ---------------------------------------------------------------------- #
+def test_range_expiry_uses_the_end_date():
+    """坑 3：区间写法 ``2026.10.05-2026.10.11`` 的截止是 **10-11**，不是 10-05。
+
+    ``query-my-coupons`` 的 ``availableTime`` 就是这么返回的。取第一段会把
+    「明天到期」说成「5 天前已过期」，于是预热卡上多出一条根本不存在的冲突。
+    """
+    assert parse_until("2026.10.05-2026.10.11") == date(2026, 10, 11)
+    # 活动日期仍取开始日——两处语义不同，不能共用同一个取法
+    assert parse_when("2026.10.05-2026.10.11") == date(2026, 10, 5)
+
+    w = watch_coupons([Coupon(title="9.9元中杯冰美式",
+                              available_until="2026.10.05-2026.10.11")],
+                      today=date(2026, 10, 10), target_date=date(2026, 10, 11))[0]
+    assert w.until == date(2026, 10, 11)
+    assert w.days_to_expire == 1
+    assert w.expired is False, "明天才到期，不能判成已过期"
+    assert w.survives is True
+
+
+def test_range_expiry_does_not_fake_a_conflict():
+    """坑 3 的端到端回归：修好之后，这条假冲突必须从卡片上消失。"""
+    cams = [CampaignEvent(date="2026-10-11", title="明日场", stage="future")]
+    cs = [Coupon(title="9.9元中杯冰美式", available_until="2026.10.05-2026.10.11")]
+    p = build_preheat(cams, cs, today=date(2026, 10, 10))
+    assert p.missing == [], f"明天到期的券不该算「等不到」：{[c.title for c in p.missing]}"
+    assert p.surviving
+    assert "等不到" not in p.headline
+
+
+def test_coupon_expiring_today_is_visible_not_silently_dropped():
+    """坑 4：官方把今天到期写成「今日」——最紧急的一张券，不能人间蒸发。"""
+    cs = [Coupon(title="三件任选6折", available_until="今日")]
+    p = build_preheat(CAMPAIGNS, cs, today=TODAY)
+    w = p.coupons[0]
+    assert w.until == TODAY, "「今日」是明确表述，应当解析为今天"
+    assert w.days_to_expire == 0
+    assert w.urgent, "今天到期属于最紧急的一档"
+    assert w.survives is False, "今天到期，撑不到 10-16 那场"
+
+    md = render_preheat_markdown(p)
+    assert "三件任选6折" in md, "今天到期的券不能从卡片上消失"
+    assert "0 天后" not in md, "「0 天后」没人看得懂，今天到期就说今天"
+    assert any("今天到期" in t for t in p.tips), "建议里同样要说「今天到期」而不是「还剩 0 天」"
+
+    # 没有预热对象时这张券走的是 urgent 分支，口径必须一致
+    p2 = build_preheat([], cs, today=TODAY)
+    assert any("今天到期" in t for t in p2.tips)
+
+
+def test_unparsable_coupon_expiry_is_disclosed():
+    """坑 4 的另一半：读不懂的到期文案必须**数出来露出去**，不能悄悄丢掉。"""
+    cs = [Coupon(title="神秘券", available_until="长期有效")]
+    p = build_preheat(CAMPAIGNS, cs, today=TODAY)
+    assert p.coupons[0].unparsed
+    assert p.coupon_unparsed_count == 1, "解析失败必须计数"
+    assert "读不懂" in render_preheat_markdown(p)
+    assert "读不懂" in render_preheat_html(p)
+
+
+def test_many_urgent_coupons_do_not_mean_naked_entry():
+    """坑 5：临期扣分必须封顶——手里一堆券的人不是「裸奔进场」。"""
+    cs = [Coupon(title=f"券{i}", available_until="2026.10.16 23:59") for i in range(10)]
+    p = build_preheat(CAMPAIGNS, cs, today=TODAY, points=1320.1, redeem_points=[100])
+    assert len(p.urgent) == 10 and p.surviving, "前置：10 张临期、且都撑得到"
+    assert urgent_penalty_count(p) == URGENT_CAP, "扣分张数必须封顶"
+    assert p.grade != "C", f"手里 10 张券不能被判「裸奔进场」（{p.score} 分）"
+    assert p.score >= 70
+
+
+def test_surviving_list_does_not_repeat_the_urgent_list():
+    """压线券不抄两遍：活动只剩 1 天时，「即将到期」和「能撑到」会完全重叠。"""
+    cams = [CampaignEvent(date="2026-10-10", title="明日场", stage="future")]
+    cs = [Coupon(title="压线券", available_until="2026.10.10 23:59"),
+          Coupon(title="安全券", available_until="2026.10.20 23:59")]
+    p = build_preheat(cams, cs, today=TODAY)
+    assert {"压线券", "安全券"} == {c.title for c in p.surviving}
+
+    md = render_preheat_markdown(p)
+    body = md.split("能撑到活动当天")[1].split("\n##")[0]
+    assert "- ✅ 安全券" in body, "真正安全的券要列出来"
+    assert "- ✅ 压线券" not in body, "压线券已在临期清单列过，这里不该再列一遍"
+    assert "另有 1 张压线券" in body, "被折叠掉的压线券要有交代"
+
+    # HTML 与 Markdown 必须同口径，否则「截图版」和「文本版」又是两个答案
+    rows = render_preheat_html(p).split("能撑到活动当天")[1].split("另有")[0]
+    assert "安全券" in rows and "压线券" not in rows
 
 
 # ---------------------------------------------------------------------- #

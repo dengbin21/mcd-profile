@@ -17,12 +17,12 @@
       {
         "title": "免费香芋派",
         "days": 7,
-        "on_edge": false
+        "tight": true
       },
       {
         "title": "免费中薯条",
         "days": 53,
-        "on_edge": false
+        "tight": false
       }
     ],
     "urgent": [

@@ -135,7 +135,9 @@ def build_archive(client=None, use_remote: bool = True,
     savings = analyze_savings(raw.orders)
     habit = analyze_habit(raw.orders, raw.frequent_meal)
     activity = analyze_activity(raw.campaigns, raw.server_time)
-    persona = build_persona(raw.orders, cons, health, savings)
+    # benefit / habit 一并交给人格引擎：无消费记录时也有「常点/券包/新兵」的诚实兜底
+    persona = build_persona(raw.orders, cons, health, savings,
+                            benefit=benefit, frequent_name=habit.frequent_name)
 
     called = [t.name for t in raw.tool_calls]
     ok = [t.name for t in raw.tool_calls if t.ok]

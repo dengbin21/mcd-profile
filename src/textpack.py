@@ -47,8 +47,8 @@ if TYPE_CHECKING:  # noqa: F401 —— 仅用于类型标注
 # ====================================================================== #
 TEXT_REGISTRY: dict[str, dict[str, str]] = {
     # ---- 品牌 / 标题 ----
-    "brand": {"default": "麦当劳 MCP · 麦麦档案", "desc": "卡片顶部品牌行"},
-    "sec.md_title": {"default": "麦麦档案 · McProfile", "desc": "Markdown 文档主标题"},
+    "brand": {"default": "麦当劳 MCP · 麦麦战绩", "desc": "卡片顶部品牌行"},
+    "sec.md_title": {"default": "麦麦战绩 · McProfile", "desc": "Markdown 文档主标题"},
     "sec.persona": {"default": "你的麦门人格", "desc": "人格区块标题"},
     "sec.report": {"default": "本次点餐战报", "desc": "点餐战报区块标题"},
     "sec.badges": {"default": "成就徽章墙", "desc": "徽章墙区块标题"},
@@ -67,7 +67,7 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
     "sec.taste": {"default": "口味偏好与门店足迹", "desc": "卡片口味足迹标题"},
     "sec.savings_hl": {"default": "省钱亮点", "desc": "卡片省钱亮点标题"},
     "sec.mcp_cap": {"default": "MCP 能力覆盖", "desc": "卡片能力覆盖标题"},
-    "cta": {"default": "🍟 我也要一份我的麦麦档案", "desc": "底部号召语（cta 字段缺省时用）"},
+    "cta": {"default": "🍟 我也要一份我的麦麦战绩", "desc": "底部号召语（cta 字段缺省时用）"},
 
     # ---- 元信息 ----
     "lbl.theme_name": {"default": "", "desc": "主题显示名（留空则用规则主题名）"},
@@ -214,16 +214,16 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
     "lbl.sav_fav_coupon": {"default": "最爱券「{name}」", "desc": "卡片：最爱券"},
 
     # ---- 页脚 ----
-    "ft.produced": {"default": "由麦麦档案 McProfile 生成", "desc": "页脚：生成来源"},
+    "ft.produced": {"default": "由麦麦战绩 McProfile 生成", "desc": "页脚：生成来源"},
     "ft.tools": {"default": "本次调用 {n} 个官方 MCP 工具", "desc": "页脚：工具调用"},
     "ft.offline": {"default": "离线演示模式", "desc": "页脚：离线模式"},
     "ft.line1": {"default": "{tools} · 仅供个人复盘，不构成医疗/营养建议",
                  "desc": "页脚第一行（PNG）"},
-    "ft.line2": {"default": "麦麦档案 McProfile · 基于麦当劳官方 MCP 生成",
+    "ft.line2": {"default": "麦麦战绩 McProfile · 基于麦当劳官方 MCP 生成",
                  "desc": "页脚第二行（PNG）"},
     "ft.disclaimer_short": {"default": "仅供个人复盘，不构成营养或医疗建议",
                             "desc": "卡片免责声明（短）"},
-    "ft.disclaimer": {"default": "本档案由「麦麦档案 McProfile」基于麦当劳官方 MCP 生成，"
+    "ft.disclaimer": {"default": "本档案由「麦麦战绩 McProfile」基于麦当劳官方 MCP 生成，"
                                 "仅供个人复盘参考，不构成医疗或营养建议；"
                                 "餐品与价格以麦当劳官方渠道为准。",
                       "desc": "Markdown 免责声明（长）"},
@@ -248,7 +248,7 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
     "sv.lbl_original": {"default": "原价", "desc": "指标：原价"},
     "sv.lbl_paid": {"default": "实付", "desc": "指标：实付"},
     "sv.lbl_discount": {"default": "官方优惠", "desc": "指标：官方优惠"},
-    "sv.discount_note": {"default": "¥{discount}（折扣力度 {rate}%）", "desc": "折扣力度说明"},
+    "sv.discount_note": {"default": "¥{discount}（省钱率 {rate}%）", "desc": "省钱率说明"},
     "sv.lbl_count": {"default": "件数", "desc": "表头：件数"},
     "sv.lbl_pay": {"default": "实付", "desc": "表头：实付"},
     "sv.lbl_avg": {"default": "均价", "desc": "表头：均价"},
@@ -263,14 +263,18 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
                    "desc": "结论：多花多得"},
     "sv.vs_more_html": {"default": "多花 ¥{extra}，多得 {n} 件<br>单件均价直降 {drop}%",
                         "desc": "结论：多花多得（HTML）"},
-    "sv.vs_note": {"default": "口径：上面的「折扣力度」是相对原价；这里的多花 ¥{extra} "
+    "sv.vs_note": {"default": "口径：上面的「省钱率」是相对原价；这里的多花 ¥{extra} "
                               "是相对「只点必选」的实付。两者量纲不同——多掏一点钱，换回更多件。",
                    "desc": "量纲口径说明（MD）"},
-    "sv.vs_note_html": {"default": "口径：上方「折扣力度」是相对原价；这里的多花 ¥{extra} "
+    "sv.vs_note_html": {"default": "口径：上方「省钱率」是相对原价；这里的多花 ¥{extra} "
                                   "是相对「只点必选」的实付。量纲不同——多掏一点，换回更多件。",
                         "desc": "量纲口径说明（HTML）"},
     "sv.enum_line": {"default": "本地枚举候选：**{n}** 种", "desc": "求解：枚举数"},
     "sv.valid_line": {"default": "其中通过预算：**{n}** 种", "desc": "求解：通过预算"},
+    "sv.kcal_line": {"default": "热量约束：≤ **{kcal} kcal**（按营养库匹配，覆盖见营养区块）",
+                     "desc": "求解：热量上限"},
+    "sv.kcal_line_html": {"default": "热量约束 ≤ {kcal} kcal（按营养库匹配，覆盖见下方营养区块）",
+                          "desc": "求解：热量上限（HTML）"},
     "sv.verify_line": {"default": "官方 `calculate-price` 验价：**{n}** 次（成功 {ok}）",
                        "desc": "求解：验价次数"},
     "sv.fail_line": {"default": "⚠️ 其中 **{n}** 次验价失败（网络或接口异常），已跳过——"
@@ -278,12 +282,21 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
                      "desc": "求解：验价失败披露"},
     "sv.final_note": {"default": "最终价格以官方验价为准，本地估算只用于排序",
                       "desc": "求解：最终口径"},
+    "sv.voucher_note": {"default": "口径：券的核销通常需要「券绑定的凭证商品码」，而官方卡包接口未返回该字段，"
+                                   "故本次验价以官方按账号自动匹配的券价为准；若实付与你预期的券后价不符，"
+                                   "请先在官方 App 确认该券可用的门店与商品。",
+                        "desc": "券凭证码风险披露（MD）"},
+    "sv.voucher_note_html": {"default": "口径：券的核销通常需要「券绑定的凭证商品码」（官方卡包接口未返回），"
+                                        "验价以官方按账号自动匹配的券价为准；实付与券后价不符时，请到官方 App 确认券可用门店与商品。",
+                             "desc": "券凭证码风险披露（HTML）"},
     "sv.fail_note_html": {"default": "有 {n} 次官方验价失败已跳过，"
                                     "最优解是在成功验价的组合中选出的。",
                           "desc": "求解：验价失败披露（HTML）"},
     "sv.rules_unknown": {"default": "另有 {n} 张券无法自动解析", "desc": "券：无法解析"},
     "sv.nut_kcal": {"default": "热量 **{kcal} kcal**", "desc": "营养：热量"},
     "sv.nut_line": {"default": "蛋白 {p} g ｜ 脂肪 {f} g ｜ 钠 {na} mg", "desc": "营养：三项"},
+    "sv.nut_per_yuan": {"default": "每元热量 **{v} kcal/¥**（这单的「性价比」）",
+                        "desc": "营养：每元热量"},
     "sv.nut_cov": {"default": "营养映射覆盖 {m}/{t} 件", "desc": "营养：覆盖率"},
     "sv.lbl_kcal_unit": {"default": "千卡", "desc": "营养卡：千卡"},
     "sv.lbl_protein": {"default": "蛋白", "desc": "营养卡：蛋白"},
@@ -291,9 +304,13 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
     "sv.lbl_sodium": {"default": "钠", "desc": "营养卡：钠"},
     "sv.stat_enum": {"default": "本地枚举<br>候选组合", "desc": "统计：枚举"},
     "sv.stat_verify": {"default": "官方验价<br>calculate-price", "desc": "统计：验价"},
-    "sv.stat_rate": {"default": "折扣力度", "desc": "统计：折扣力度"},
-    "sv.demo_warn": {"default": "演示模式：价格为脱敏样例数据的本地估算，非官方实时报价。",
-                     "desc": "演示模式警告"},
+    "sv.stat_rate": {"default": "省钱率", "desc": "统计：省钱率"},
+    "sv.demo_foot": {"default": "演示模式：价格为脱敏样例数据的本地估算，非官方实时报价；"
+                                "联网后由官方 `calculate-price` 逐单验价，全程只读、不产生订单",
+                     "desc": "离线口径（MD）：替换 foot_price，避免「本地估算」与「来自官方」并排矛盾"},
+    "sv.demo_foot_html": {"default": "演示模式：价格为脱敏样例数据的本地估算，非官方实时报价；"
+                                    "联网后由官方 <code>calculate-price</code> 逐单验价，全程只读、不产生订单",
+                         "desc": "离线口径（HTML）"},
     "sv.foot_price": {"default": "价格来自麦当劳官方 MCP `calculate-price`，"
                                 "全程只读、不产生订单", "desc": "页脚：价格来源"},
     "sv.foot_price_html": {"default": "价格来自麦当劳官方 MCP <code>calculate-price</code>，"
@@ -346,6 +363,14 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
                               "desc": "日期解析失败披露（MD，完整）"},
     "ph.unparsed_note_html": {"default": "未计入倒计时。活动本身没丢，完整列表见 campaign 命令。",
                               "desc": "日期解析失败披露（HTML 后半句）"},
+    "ph.coupon_unparsed_full": {"default": "⚠️ 有 **{n}** 张券的到期时间读不懂，未参与冲突判断"
+                                           "——券还在你包里，麻烦自己看一眼。",
+                                "desc": "券到期文案解析失败披露（MD）"},
+    "ph.coupon_unparsed_html": {"default": "有 {n} 张券的到期时间读不懂，未参与冲突判断"
+                                           "——券还在包里，自己看一眼。",
+                                "desc": "券到期文案解析失败披露（HTML）"},
+    "ph.surviving_note": {"default": "另有 {n} 张压线券（撑得到，但到期就在眼前），见上方临期清单。",
+                          "desc": "存活清单：压线券已在上文列出，这里不重复"},
     "ph.foot_md": {"default": "口径：活动来自官方 `campaign-calendar`，券到期来自 "
                               "`query-my-coupons`，时间基准 `now-time-info`。"
                               "全程只读，不领券、不抽奖、不下单。",
@@ -378,7 +403,10 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
     "ph.tip_expired": {"default": "「{title}」已过期，别再惦记它了", "desc": "建议：已过期"},
     "ph.tip_missing": {"default": "「{title}」还剩 {n} 天到期，撑不到「{target}」——先用掉",
                        "desc": "建议：等不到活动"},
+    "ph.tip_missing_today": {"default": "「{title}」今天到期，撑不到「{target}」——今天就用掉",
+                             "desc": "建议：今天到期且赶不上活动"},
     "ph.tip_urgent": {"default": "「{title}」{n} 天内到期，别压箱底", "desc": "建议：临期"},
+    "ph.tip_urgent_today": {"default": "「{title}」今天到期，别压箱底", "desc": "建议：今天到期"},
     "ph.tip_no_coupon": {"default": "活动当天你一张券都不剩，等于原价进场", "desc": "建议：当天无券"},
     "ph.tip_points": {"default": "积分 {points:g} 够兑 {n} 件商品，活动当天能当现金使",
                       "desc": "建议：积分可兑"},
@@ -607,7 +635,7 @@ def build_copy_brief(a: "Archive") -> dict:
         "badge_title": {"<原徽章名>": "新徽章名（≤8 字）"},
     }
     return {
-        "task": "为「麦麦档案 McProfile」生成全部展示文字（WorkBuddy 在环，无需外部 Key）",
+        "task": "为「麦麦战绩 McProfile」生成全部展示文字（WorkBuddy 在环，无需外部 Key）",
         "persona": {"label": p.label, "emoji": p.emoji, "one_liner": p.one_liner,
                     "tags": list(p.tags), "radar": dict(p.radar)},
         "theme": {"name": th.name, "slogan_rule": th.slogan},
@@ -826,6 +854,11 @@ def build_solve_brief(sol, *, store_name: str = "", offline: bool = False,
         "verify_count": getattr(sol, "verify_count", 0),
         "verify_ok": getattr(sol, "verify_ok", 0),
         "fail_count": getattr(sol, "fail_count", 0),
+        "max_kcal": getattr(sol, "max_kcal", 0.0),
+        "kcal": round(getattr(sol, "nutrition", {}).get("kcal", 0.0)),
+        "kcal_per_yuan": round(
+            (getattr(sol, "nutrition", {}).get("kcal", 0.0) / sol.paid)
+            if getattr(sol, "paid", 0.0) > 0 else 0.0),
         "items": [(i.name or i.product_code) for i in getattr(sol, "items", [])],
         "coupon_rules": [r.readable for r in getattr(sol, "rules", [])],
         "nutrition": dict(getattr(sol, "nutrition", {}) or {}),
@@ -888,12 +921,13 @@ def build_preheat_brief(pre, *, repo_url: str = "") -> dict:
         "missing": [{"title": c.title, "days": c.days_to_expire, "until": c.until_text}
                     for c in getattr(pre, "missing", [])],
         "surviving": [{"title": c.title, "days": c.days_to_expire,
-                       "on_edge": getattr(c, "on_edge", False)}
+                       "tight": getattr(c, "tight", False)}
                       for c in getattr(pre, "surviving", [])],
         "urgent": [{"title": c.title, "days": c.days_to_expire} for c in getattr(pre, "urgent", [])],
         "running": [c.title for c in getattr(pre, "running", [])],
         "upcoming": [{"title": c.title, "date": c.date} for c in getattr(pre, "upcoming", [])],
         "unparsed_count": getattr(pre, "unparsed_count", 0),
+        "coupon_unparsed_count": getattr(pre, "coupon_unparsed_count", 0),
         "score": getattr(pre, "score", 0),
         "grade": getattr(pre, "grade", ""),
         "points": getattr(pre, "points", 0.0),

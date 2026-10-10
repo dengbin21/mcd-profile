@@ -123,7 +123,7 @@ def render_card_html(a: Archive, copy: CopyPack | None = None) -> str:
     return f"""<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>麦麦档案 · {html.escape(eff_label(a, copy))}</title>
+<title>麦麦战绩 · {html.escape(eff_label(a, copy))}</title>
 <style>
   :root{{--bg:{th.bg};--bg2:{th.bg2};--panel:{th.panel};--primary:{th.primary};
         --accent:{th.accent};--glow:{th.glow};--ink:{th.ink};--muted:{th.muted};}}

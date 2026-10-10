@@ -32,11 +32,17 @@ URGENT_DAYS = 7
 
 # 备战度扣分/加分权重（纯规则、可解释，产物里会原样披露）
 #
-# 配平原则：**扣分必须压得住加分**。早期版本给 S 太容易——
+# 配平原则一：**扣分必须压得住加分**。早期版本给 S 太容易——
 # 「3 张券里有 1 张赶不上活动」仍被评为 S（弹药充足），这是自相矛盾的。
 # 现在一张 miss 就 -25，配合 +5/+5 的小额加分，有冲突必定掉到 A 以下。
+#
+# 配平原则二：**临期扣分必须封顶**。临期券是「快过期的弹药」，不是缺口——
+# 不封顶的话，手里 10 张券全在 7 天内到期就会 -100 直接触底，
+# 卡片上写着「裸奔进场，建议先清券」，可这人手上是全场弹药最足的那个。
+# 语义被算反了，所以只扣前 3 张。
 PENALTY_MISS = 25      # 每张等不到活动的券
 PENALTY_URGENT = 10    # 每张 7 天内到期（且尚未计入 miss）
+URGENT_CAP = 3         # 临期扣分最多算 3 张——券多不是罪
 PENALTY_NO_COUPON = 20 # 活动当天一张券都不剩
 BONUS_RUNNING = 5      # 今天本来就有活动在进行
 BONUS_POINTS = 5       # 积分够兑换门槛
@@ -56,34 +62,68 @@ _GRADE_WORD = {
 _DATE_SEP = re.compile(r"[.\-/年]")
 _TAIL = re.compile(r"[月日号].*$")
 
+# 官方券面到期文案里出现过「今日」——这是**无歧义**的自然语言，不是模糊表述，
+# 认它不算猜。其余读不懂的一律按「不知道」处理并**计数披露**（见 parse_until）。
+TODAY_WORDS = ("今日", "今天")
 
-def parse_when(text: str) -> date | None:
-    """把官方各种写法的日期文案解析成 ``date``。
 
-    支持：``2026.10.16 23:59`` / ``2026-10-16`` / ``2026/10/16`` / ``10月16日``。
-    解析不出来返回 ``None``——**宁可当成「不知道」，也不猜一个日期出来。**
+def _date_candidates(text: str) -> list[date]:
+    """按出现顺序抠出文案里的**所有**日期。
+
+    为什么必须抠全：``query-my-coupons`` 的 ``availableTime`` 真实返回过
+    ``2026.10.05-2026.10.11`` 这种**区间**写法。早先只取前三个数字段，
+    于是这张**明天才到期**的券被算成 5 天前就过期——预热卡上凭空多出一条
+    「已过期、等不到活动」的假冲突，备战度还被白扣 25 分。
+    区间的每一段都要抠出来，交给调用方决定取首（开始）还是取尾（截止）。
     """
     s = (text or "").strip()
     if not s:
-        return None
+        return []
     # 只取日期部分，丢掉时间
     s = s.split(" ")[0].split("T")[0]
     s = _TAIL.sub("", s)
     parts = [p for p in _DATE_SEP.split(s) if p]
     if len(parts) < 2:
-        return None
+        return []
     try:
-        nums = [int(p) for p in parts[:3]]
+        nums = [int(p) for p in parts]
     except ValueError:
-        return None
-    if len(nums) == 2:                       # 只有月日 → 用当前年兜底
-        y, m, d = date.today().year, nums[0], nums[1]
-    else:
-        y, m, d = nums[0], nums[1], nums[2]
-    try:
-        return date(y, m, d)
-    except ValueError:
-        return None
+        return []
+    out: list[date] = []
+    y, i = date.today().year, 0
+    while i < len(nums):
+        if nums[i] >= 1000 and i + 3 <= len(nums):      # 带年的三段：2026.10.16
+            y, m, d, i = nums[i], nums[i + 1], nums[i + 2], i + 3
+        elif i + 2 <= len(nums):                        # 只有月日 → 用当前年兜底
+            m, d, i = nums[i], nums[i + 1], i + 2
+        else:
+            break
+        try:
+            out.append(date(y, m, d))
+        except ValueError:                              # 非法日期（如 10 月 40 日）丢弃
+            pass
+    return out
+
+
+def parse_when(text: str) -> date | None:
+    """活动日期：取文案里的**第一个**日期。
+
+    支持：``2026.10.16 23:59`` / ``2026-10-16`` / ``2026/10/16``。
+    区间写法按**开始日**算（活动的第一天）。
+    解析不出来返回 ``None``——**宁可当成「不知道」，也不猜一个日期出来。**
+    """
+    ds = _date_candidates(text)
+    return ds[0] if ds else None
+
+
+def parse_until(text: str) -> date | None:
+    """券的「有效期至」：取文案里的**最后一个**日期。
+
+    ``2026.10.05-2026.10.11`` 的有效期截止是 **10-11**，不是 10-05——
+    取第一个日期会把「明天到期」说成「5 天前已过期」。
+    """
+    ds = _date_candidates(text)
+    return ds[-1] if ds else None
 
 
 def parse_server_time(text: str) -> date | None:
@@ -103,6 +143,7 @@ class CouponWatch:
     until: date | None = None
     days_to_expire: int | None = None   # 距今还有几天到期（已过期为负）
     survives: bool | None = None        # 能否撑到目标活动当天
+    unparsed: bool = False              # 写了到期文案但读不懂——必须披露，不能静默丢
 
     @property
     def expired(self) -> bool:
@@ -129,6 +170,7 @@ class Preheat:
     running: list[CampaignEvent] = field(default_factory=list)   # 今日进行中
     upcoming: list[CampaignEvent] = field(default_factory=list)  # 其余未来活动
     unparsed_count: int = 0         # 日期解析不出来的活动条数——必须披露，不能静默丢
+    coupon_unparsed_count: int = 0  # 到期文案读不懂的券数——同上，否则这批券凭空消失
     coupons: list[CouponWatch] = field(default_factory=list)
     points: float = 0.0
     redeem_floor: float | None = None   # 最便宜的积分兑换门槛
@@ -197,6 +239,14 @@ def watch_coupons(coupons, today: date, target_date: date | None) -> list[Coupon
 
     ``coupons`` 接受任意带 ``title`` / ``available_until`` 属性的对象
     （``src.models.Coupon`` 或 duck-typed 的字典/对象都行）。
+
+    到期文案有三种结局，每一种都必须**看得见**：
+
+    * 解析出日期 → 正常参与冲突判断；
+    * 写了但读不懂（如「长期有效」）→ 标 ``unparsed``，由 ``Preheat`` 计数披露。
+      真实接口里出现过「今日」——今天到期的券本该是**最紧急**的一张，
+      早先它读不懂就被静默丢弃，三个清单里一个都不出现，等于凭空消失；
+    * 根本没写 → 同样不参与判断，但不算「读不懂」，不进披露计数。
     """
     out: list[CouponWatch] = []
     for c in coupons or []:
@@ -207,28 +257,41 @@ def watch_coupons(coupons, today: date, target_date: date | None) -> list[Coupon
             until_text = c.get("available_until", "") or c.get("until", "")
         title = title or ""
         until_text = until_text or ""
-        until = parse_when(until_text)
+        until = parse_until(until_text)
+        if until is None and until_text.strip() in TODAY_WORDS:
+            until = today                    # 「今日」= 今天到期，无歧义
         w = CouponWatch(title=title, until_text=until_text, until=until)
         if until:
             w.days_to_expire = (until - today).days
             if target_date:
                 w.survives = until >= target_date
+        elif until_text.strip():
+            w.unparsed = True
         out.append(w)
     # 快过期的排前面——用户最先该看到的
     out.sort(key=lambda w: (w.days_to_expire is None, w.days_to_expire or 0))
     return out
 
 
+def urgent_penalty_count(pre: Preheat) -> int:
+    """计入扣分的临期券张数（封顶）。
+
+    「快过期」是提醒，不是罪状——**持券多的人不该被扣成裸奔**，
+    所以只对最紧急的前 ``URGENT_CAP`` 张计分。
+    """
+    return min(len(pre.urgent), URGENT_CAP)
+
+
 def score_of(pre: Preheat) -> tuple[int, str]:
     """备战度评分。纯规则、可解释——产物里会逐条列出加减项。"""
     if pre.target is None:
         # 没有预热对象时，只评价券包的健康度
-        s = 80 - PENALTY_URGENT * len(pre.urgent)
+        s = 80 - PENALTY_URGENT * urgent_penalty_count(pre)
         s = max(0, min(100, int(s)))
     else:
         s = 100
         s -= PENALTY_MISS * len(pre.missing)
-        s -= PENALTY_URGENT * len(pre.urgent)
+        s -= PENALTY_URGENT * urgent_penalty_count(pre)
         if not pre.surviving:
             s -= PENALTY_NO_COUPON
         if pre.running:
@@ -285,6 +348,9 @@ def build_preheat(campaigns: list[CampaignEvent], coupons, *, today: date | None
 
     # ---- 券 ----
     pre.coupons = watch_coupons(coupons, today, pre.target_date)
+    # 到期文案读不懂的券：不参与任何判断，但**必须数出来露出去**——
+    # 否则用户会以为自己没这张券（真实接口里「今日」就差点这么消失）。
+    pre.coupon_unparsed_count = sum(1 for c in pre.coupons if c.unparsed)
 
     # ---- 积分 ----
     pts = [p for p in (redeem_points or []) if p and p > 0]
@@ -349,11 +415,18 @@ def _tips(pre: Preheat, tx=None) -> list[str]:
         left = c.days_to_expire or 0
         if left < 0:
             tips.append(tx("ph.tip_expired", title=c.title))
+        elif left == 0:
+            # 「还剩 0 天到期」没人看得懂——今天到期就说今天。
+            tips.append(tx("ph.tip_missing_today", title=c.title,
+                           target=(pre.target.title if pre.target else "活动")))
         else:
             tips.append(tx("ph.tip_missing", title=c.title, n=left,
                            target=(pre.target.title if pre.target else "活动")))
     for c in pre.urgent[:2]:
-        tips.append(tx("ph.tip_urgent", title=c.title, n=c.days_to_expire))
+        if c.days_to_expire == 0:
+            tips.append(tx("ph.tip_urgent_today", title=c.title))
+        else:
+            tips.append(tx("ph.tip_urgent", title=c.title, n=c.days_to_expire))
     if pre.target and not pre.surviving and pre.coupons:
         tips.append(tx("ph.tip_no_coupon"))
     if pre.redeem_floor and pre.points >= pre.redeem_floor:

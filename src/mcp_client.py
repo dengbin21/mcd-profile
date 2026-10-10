@@ -1,7 +1,7 @@
 """mcd-mcp 极简客户端（MCP Streamable HTTP / JSON-RPC 2.0）。
 
 只依赖 requests，封装麦当劳官方 MCP Server 的工具调用，
-供「麦麦档案」的数据采集与（可选）下单闭环复用。
+供「麦麦战绩」的数据采集与（可选）下单闭环复用。
 """
 from __future__ import annotations
 
@@ -18,6 +18,35 @@ DEFAULT_URL = "https://mcp.mcd.cn"
 
 class McpError(RuntimeError):
     """MCP 调用异常（网络、协议或业务错误）。"""
+
+
+class McpAuthError(McpError):
+    """凭据问题：没配 Token / Token 无效或已过期。
+
+    单独成类是因为它**不是**「服务坏了」，而是「还没证明你是谁」——
+    该给用户的动作是去配 Token，不是重试。实测没有 Token 时 mcd-mcp 只回一个
+    403，如果不单独识别，用户看到的就是一串看不懂的 HTTP 错误。
+    """
+
+
+def _explain(exc: "requests.HTTPError", name: str) -> McpError:
+    """把 HTTP 状态码翻译成「下一步该做什么」。
+
+    401/403 是新手的第一次遭遇（Token 没配或过期），只回状态码等于什么都没说；
+    其余保持原样抛出——不为「友好」掩盖真实问题。
+    """
+    status = getattr(exc.response, "status_code", 0) or 0
+    if status in (401, 403):
+        return McpAuthError(
+            f"mcd-mcp 拒绝了这次调用（HTTP {status}）：Authorization 头缺失、无效或已过期。\n"
+            "  · 申请 / 续期 Token：https://open.mcd.cn/mcp\n"
+            "  · 配好后自检：python -m src.cli doctor"
+        )
+    if status == 429:
+        return McpError(
+            f"调用 {name} 失败：HTTP 429 触发限流。McSolve 可用 --workers 调低并发后重试。"
+        )
+    return McpError(f"调用 {name} 失败：{exc}")
 
 
 class McdMcpClient:
@@ -79,6 +108,8 @@ class McdMcpClient:
                 self.url, json=payload, headers=self._headers(), timeout=self.timeout
             )
             resp.raise_for_status()
+        except requests.HTTPError as exc:  # 4xx / 5xx：状态码决定该给什么建议
+            raise _explain(exc, name) from exc
         except requests.RequestException as exc:  # 网络层错误
             raise McpError(f"调用 {name} 失败：{exc}") from exc
 
@@ -88,10 +119,17 @@ class McdMcpClient:
         return self._extract(message.get("result", {}))
 
     def list_tools(self) -> list[dict[str, Any]]:
-        """返回服务端声明的工具清单。"""
-        payload = {"jsonrpc": "2.0", "id": next(self._ids), "method": "tools/list", "params": {}}
-        resp = requests.post(self.url, json=payload, headers=self._headers(), timeout=self.timeout)
-        resp.raise_for_status()
+        """返回服务端声明的工具清单（``doctor`` 用它做连通性自检）。"""
+        payload = {"jsonrpc": "2.0", "id": self._next_id(), "method": "tools/list", "params": {}}
+        try:
+            resp = requests.post(
+                self.url, json=payload, headers=self._headers(), timeout=self.timeout
+            )
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            raise _explain(exc, "tools/list") from exc
+        except requests.RequestException as exc:
+            raise McpError(f"连不上 mcd-mcp（{self.url}）：{exc}") from exc
         return self._decode(resp).get("result", {}).get("tools", [])
 
     # ------------------------------------------------------------------ #

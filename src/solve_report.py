@@ -126,6 +126,8 @@ def render_solve_markdown(sol: Solution, *, store_name: str = "",
     lines.append(tx("sv.enum_line", n=sol.enum_count))
     if sol.valid_count and sol.valid_count != sol.enum_count:
         lines.append(tx("sv.valid_line", n=sol.valid_count))
+    if sol.max_kcal:
+        lines.append(tx("sv.kcal_line", kcal=f"{sol.max_kcal:.0f}"))
     lines.append(tx("sv.verify_line", n=sol.verify_count, ok=sol.verify_ok))
     if sol.fail_count:
         lines.append(tx("sv.fail_line", n=sol.fail_count))
@@ -137,8 +139,12 @@ def render_solve_markdown(sol: Solution, *, store_name: str = "",
         lines.append(f"### {tx('sv.sec_rules')}\n")
         for r in recognized[:8]:
             lines.append(f"- {r.title} → {r.readable}")
+        # 券凭证码风险：只对「联网真验价」披露（离线本来就是本地估算，说多了是噪音）
+        if not offline:
+            lines.append("")
+            lines.append(f"> {tx('sv.voucher_note')}")
 
-    if n:
+    if n and n.get("kcal"):
         lines.append("")
         lines.append(f"## {tx('sv.sec_nutrition')}\n")
         kcal_txt = f"{n.get('kcal', 0):.0f}"
@@ -147,13 +153,19 @@ def render_solve_markdown(sol: Solution, *, store_name: str = "",
         sodium_txt = f"{n.get('sodium', 0):.0f}"
         lines.append(f"- {tx('sv.nut_kcal', kcal=kcal_txt)}")
         lines.append(f"- {tx('sv.nut_line', p=protein_txt, f=fat_txt, na=sodium_txt)}")
+        if sol.paid and n.get("kcal"):
+            per_yuan = n["kcal"] / sol.paid
+            lines.append(f"- {tx('sv.nut_per_yuan', v=f'{per_yuan:.0f}')}")
         if n.get("total"):
             lines.append(f"- {tx('sv.nut_cov', m=n.get('matched', 0), t=n.get('total', 0))}")
 
     lines.append("")
     if offline:
-        lines.append(f"> {tx('sv.demo_warn')}")
-    lines.append(f"> {tx('sv.foot_price')}")
+        # 演示模式的口径要自洽：不能说「本地估算」又说「来自官方验价」。
+        # 这里用合并句替换 foot_price（sv.demo_warn 已并入，不再单独出现）。
+        lines.append(f"> {tx('sv.demo_foot')}")
+    else:
+        lines.append(f"> {tx('sv.foot_price')}")
     lines.append(f"> {tx('sv.foot_nutrition')}")
     lines.append("")
     lines.append(f"---\n\n{tx('sv.cta_md', repo=REPO_URL)}")
@@ -280,6 +292,10 @@ def render_solve_html(sol: Solution, *, store_name: str = "",
         f"<div class='note'>⚠️ {_esc(tx('sv.fail_note_html', n=sol.fail_count))}</div>"
         if sol.fail_count else ""
     )
+    kcal_note = (
+        f"<div class='note'>{_esc(tx('sv.kcal_line_html', kcal=f'{sol.max_kcal:.0f}'))}</div>"
+        if sol.max_kcal else ""
+    )
 
     stats_html = (
         f"<div class='sec'><div class='h'>{_esc(tx('sv.sec_process'))}</div><div class='stats'>"
@@ -289,10 +305,17 @@ def render_solve_html(sol: Solution, *, store_name: str = "",
         f"<div class='slab'>{_esc(tx('sv.stat_verify'))}</div></div>"
         f"<div class='stat'><div class='snum'>{sol.save_rate * 100:.0f}%</div>"
         f"<div class='slab'>{_esc(tx('sv.stat_rate'))}</div></div>"
-        f"</div>{fail_html}</div>"
+        f"</div>{kcal_note}{fail_html}</div>"
     )
 
-    warn = (f"<div class='warn'>{_esc(tx('sv.demo_warn'))}</div>" if offline else "")
+    # 券凭证码风险只对「联网真验价」披露（离线本来就是本地估算）
+    voucher_html = (
+        f"<div class='note'>{_esc(tx('sv.voucher_note_html'))}</div>"
+        if recognized and not offline else ""
+    )
+
+    # 演示模式的口径要自洽：页脚不再写「价格来自官方验价」（与演示警告打架）
+    foot_price = tx("sv.demo_foot_html") if offline else tx("sv.foot_price_html")
 
     store_line = f"<div class='sub'>{_esc(store_name)}</div>" if store_name else ""
     hl_line = f"<div class='hline'>{_esc(hl)}</div>" if hl else ""
@@ -331,12 +354,12 @@ def render_solve_html(sol: Solution, *, store_name: str = "",
 {vs_html}
 {stats_html}
 {rules_html}
+{voucher_html}
 {nut_html}
 
 <div class="cta">{_esc(tx('sv.cta', repo=REPO_URL))}</div>
-{warn}
 <div class="foot">
-  {_esc(tx('sv.foot_price_html'))}<br>
+  {_esc(foot_price)}<br>
   {_esc(tx('sv.foot_nutrition'))}
 </div>
 

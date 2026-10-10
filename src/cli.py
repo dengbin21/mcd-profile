@@ -1,7 +1,7 @@
-"""麦麦档案 McProfile —— 命令行入口。
+"""麦麦战绩 McProfile —— 命令行入口。
 
 示例：
-    python -m src.cli archive                 # 生成并打印你的麦麦档案
+    python -m src.cli archive                 # 生成并打印你的麦麦战绩
     python -m src.cli archive --html out.html --png out.png
     python -m src.cli orders                  # 只看订单
     python -m src.cli savings                 # 只看省钱复盘
@@ -41,9 +41,9 @@ from src.textpack import (                                                    # 
     CopyPack, brief_allowed_numbers, build_copy_brief, build_preheat_brief,
     build_solve_brief, numeric_leak_warnings, validate_copy_pack, _numbers_of,
 )
-from src.mcp_client import McdMcpClient, McpError                          # noqa: E402
+from src.mcp_client import McdMcpClient, McpAuthError, McpError            # noqa: E402
 from src.menu_view import render_menu_html                                  # noqa: E402
-from src.models import CartItem, MenuItem                                   # noqa: E402
+from src.models import CartItem, Coupon, MenuItem                                   # noqa: E402
 from src.nutrition import load_snapshot                                     # noqa: E402
 from src.order_text import (                                                # noqa: E402
     AmbiguousItem, UnknownItem, parse_items, resolve_cart,
@@ -61,7 +61,7 @@ from src.preheat_report import (                                            # no
 )
 from src.solve_report import render_solve_html, render_solve_markdown       # noqa: E402
 from src.solver import (                                                   # noqa: E402
-    MAX_ADD_HARD, eat_command, make_offline_pricer, make_remote_pricer,
+    MAX_ADD_HARD, eat_command, is_better, make_offline_pricer, make_remote_pricer,
     parse_coupons, solve,
 )
 
@@ -79,7 +79,15 @@ def _env_token() -> str | None:
 
 
 def _token_from_config() -> str | None:
-    """从本机 MCP 配置里取 Token。
+    """从本机 MCP 配置里取 Token（只要值）。排查问题时请用 ``_token_from_config_source``。"""
+    return _token_from_config_source()[0]
+
+
+def _token_from_config_source() -> tuple[str | None, str]:
+    """从本机 MCP 配置里取 Token，并**说明它来自哪个文件**。
+
+    「配了但没生效」这类问题，知道来源比知道有无重要得多——
+    否则用户改了一个文件，生效的却是另一个。
 
     顺序：仓库内 ``mcp-config.local.json``（自建、已 gitignore）→ 客户端 MCP 配置
     → 仓库内 ``mcp-config.example.json``（模板，最后兜底）。
@@ -109,12 +117,49 @@ def _token_from_config() -> str | None:
             if m:
                 env_val = os.environ.get(m.group(1))
                 if env_val:
-                    return env_val
+                    return env_val, f"{path}（其中 ${{{m.group(1)}}} 由环境变量展开）"
                 # 该配置文件用的是环境变量占位符但未设置：继续扫描下一个配置
                 continue
             if value and "YOUR" not in value.upper():
-                return value
-    return None
+                return value, str(path)
+    return None, ""
+
+
+APPLY_URL = "https://open.mcd.cn/mcp"
+
+
+def _resolve_token(args) -> tuple[str | None, str]:
+    """解析 Token 并说明来源，优先级：``--token`` > 环境变量 > 配置文件。"""
+    if getattr(args, "token", None):
+        return args.token, "--token 命令行参数"
+    if _env_token():
+        return _env_token(), "环境变量 MCD_MCP_TOKEN"
+    token, src = _token_from_config_source()
+    return token, src
+
+
+def _setup_guide() -> str:
+    """没 Token 时给的一段**可以照着做完**的指引。
+
+    为什么需要它：实测没配 Token 时 mcd-mcp 只回 ``403 Forbidden``，
+    新手看到这行字既不知道缺什么、也不知道去哪补。
+    """
+    return f"""
+╭── 还差一步：麦当劳 MCP 的 Token ─────────────────────────╮
+│ 本工具的全部数据都来自麦当劳官方 MCP，需要先证明「你是你」。│
+╰────────────────────────────────────────────────────────╯
+
+1) 申请 Token：{APPLY_URL}
+
+2) 填进来（三选一，推荐第一条）：
+     export MCD_MCP_TOKEN=<你的 Token>
+   # 或临时指定：  python -m src.cli --token <你的 Token> solve --items 板烧鸡腿堡
+   # 或写进文件：  cp mcp-config.example.json mcp-config.local.json   ← 再填真值
+   #               （该文件已 gitignore，不会误提交）
+
+3) 自检（会告诉你 Token 找没找到、能不能连上、缺哪些工具）：
+     python -m src.cli doctor
+"""
 
 
 def _use_remote(args) -> bool:
@@ -265,14 +310,26 @@ def _next_step(*hints: str) -> None:
 
 
 def _preheat_hint(a) -> str:
-    """档案 → 预热台的回流量：用档案里已有的活动数据，指出下一场活动。"""
-    act = getattr(a, "activity", None)
-    upcoming = list(getattr(act, "upcoming", None) or [])
-    if upcoming:
-        nxt = upcoming[0]
+    """档案 → 预热台的回流量：指出「下一场活动」。
+
+    与 :func:`preheat.pick_target` 用**同一口径**（按日期取最近一场严格未来活动，
+    不信任 ``stage`` 字段），否则 archive 指向的活动会和 preheat 实际倒计时的
+    对象不一致，两个命令在同一份数据上打架。
+    """
+    from datetime import date
+
+    from src.preheat import parse_server_time, parse_when, pick_target
+
+    raw = getattr(a, "raw", None)
+    campaigns = list(getattr(raw, "campaigns", None) or [])
+    if not campaigns:
+        return ""
+    today = parse_server_time(getattr(raw, "server_time", "") or "") or date.today()
+    nxt = pick_target(campaigns, today)
+    if nxt is not None:
         return (f"下一场活动「{nxt.title}」（{nxt.date}）——跑 "
                 "`python -m src.cli preheat` 看你的券等不等得到那天")
-    if list(getattr(act, "current", None) or []):
+    if any((parse_when(c.date) or today) == today for c in campaigns):
         return "今天就有活动在跑：`python -m src.cli preheat` 看备战度"
     return ""
 
@@ -442,6 +499,59 @@ def cmd_tools(args):
     print("\n> 本作品只调用「只读」工具；下单/取消/抽奖/领券等写操作刻意不纳入。")
 
 
+def cmd_doctor(args):
+    """环境自检：Token 找没找到、从哪找到的、连不连得上、依赖的工具齐不齐。
+
+    这是**装好之后第一件该跑的事**。没有它，一个新用户拿到的第一个反馈是
+    ``403 Forbidden``——既不知道缺什么，也不知道去哪补。
+    """
+    print("# 环境自检 · mcd-mcp 连接状态\n")
+
+    if getattr(args, "offline", False):
+        print("① Token：— 离线模式用不上（数据来自随仓库附带的脱敏样例）")
+        print("② 连通性：— 已跳过（--offline）")
+        print(f"\n要接真实数据：配好 Token 后直接跑 python -m src.cli doctor"
+              f"（申请：{APPLY_URL}）")
+        return
+
+    token, src = _resolve_token(args)
+    if not token:
+        print("① Token：✗ 没找到（已扫描 --token / 环境变量 / 本机 MCP 配置）")
+        print(_setup_guide())
+        return
+
+    # 只显示首尾：自检报告会被贴到 issue/群里，不能把凭据原文打出来
+    masked = token[:4] + "…" + token[-4:] if len(token) > 12 else "****"
+    print(f"① Token：✓ 已找到 {masked}（来源：{src}）")
+
+    try:
+        tools = _client(args).list_tools()
+    except McpAuthError as exc:
+        print("② 连通性：✗ 凭据被拒绝\n")
+        print(f"   {exc}")
+        return
+    except McpError as exc:
+        print("② 连通性：✗ 连不上\n")
+        print(f"   {exc}")
+        print(f"\n   网络正常仍失败的话，多半是 Token 过期：{APPLY_URL}")
+        return
+
+    names = {t.get("name", "") for t in tools}
+    print(f"② 连通性：✓ 已连上（服务端声明 {len(names)} 个工具）")
+
+    missing = [t for t in TOOL_PLAN if t not in names]
+    if missing:
+        print(f"③ 工具覆盖：⚠️ 本作依赖 {len(TOOL_PLAN)} 个只读工具，缺 {len(missing)} 个：")
+        print(f"   {', '.join(missing)}")
+    else:
+        print(f"③ 工具覆盖：✓ 本作依赖的 {len(TOOL_PLAN)} 个只读工具全部可用")
+
+    print("\n一切正常，可以开玩：")
+    print("  python -m src.cli solve --items 板烧鸡腿堡   # 这一单怎么点最划算")
+    print("  python -m src.cli preheat                    # 你的券等不等得到活动那天")
+    print("  python -m src.cli eat --dry-run              # 点餐（默认只算价不下单）")
+
+
 def cmd_card(args):
     """导出分享卡片。
 
@@ -499,11 +609,14 @@ def _brief_solve(args):
             must = []
     if not must:
         must = [next(iter(menu_items))]
+    lookup = _nutrition_lookup()
     sol = solve(must, menu_items, rules, make_offline_pricer(menu_items, rules),
                 budget=float(getattr(args, "budget", 0) or 0.0),
                 max_add=min(int(getattr(args, "add", 3) or 3), MAX_ADD_HARD),
                 top_n=int(getattr(args, "top", 30) or 30),
-                nutrition_lookup=_nutrition_lookup())
+                nutrition_lookup=lookup,
+                kcal_map=_menu_kcal_map(menu_items, lookup),
+                max_kcal=float(getattr(args, "kcal", 0) or 0.0))
     return sol
 
 
@@ -884,20 +997,29 @@ def _sample_coupon_titles() -> list[str]:
     return titles
 
 
-def _coupon_titles(client, session: OrderingSession) -> list[str]:
-    """真实模式取券：我的券 + 门店券 + 可领券（三层，全部只读）。"""
-    titles: list[str] = []
+def _coupon_titles(client, session: OrderingSession) -> list:
+    """真实模式取券：我的券 + 门店券 + 可领券（三层，全部只读）。
+
+    返回 ``list[Coupon]``：除标题外尽量保留券标识（coupon_id），
+    供算价/核销按需透传（官方卡包接口通常不返回，防御性保留）。
+    """
+    from src.models import Coupon, parse_coupon
+
+    out: list[Coupon] = []
+    seen: set[str] = set()
 
     def _add(v) -> None:
         if isinstance(v, str):
-            t = v
+            c = Coupon(title=v)
         elif isinstance(v, dict):
-            t = v.get("title") or v.get("couponName") or v.get("name") or ""
+            c = parse_coupon(v)
         else:
-            t = ""
-        t = str(t).strip()
-        if t:
-            titles.append(t)
+            return
+        title = (c.title or "").strip()
+        if not title or title in seen:
+            return
+        seen.add(title)
+        out.append(c)
 
     try:
         d = client.call_tool("query-my-coupons", {})
@@ -920,7 +1042,7 @@ def _coupon_titles(client, session: OrderingSession) -> list[str]:
             _add(c)
     except McpError:
         pass
-    return titles
+    return out
 
 
 def _nutrition_lookup():
@@ -955,6 +1077,23 @@ def _nutrition_lookup():
                 "matched": matched, "total": len(names)}
 
     return lookup
+
+
+def _menu_kcal_map(menu_items: dict[str, MenuItem], lookup) -> dict[str, float]:
+    """菜单 ``code -> 单份 kcal``；营养库查不到的商品记 0（热量下界，产物披露覆盖率）。
+
+    供 McSolve 的 ``--kcal`` 双约束剪枝用：未知热量按 0 计是**下界**，
+    只剪「下界已超限」的候选，绝不误杀合规组合。
+    """
+    if lookup is None:
+        return {}
+    out: dict[str, float] = {}
+    for code, it in menu_items.items():
+        if not it.name:
+            continue
+        n = lookup([it.name])
+        out[code] = float(n["kcal"]) if n.get("matched") else 0.0
+    return out
 
 
 def cmd_preheat(args):
@@ -1008,7 +1147,7 @@ def cmd_solve(args):
     # ---- 1) 菜单 + 券 ----
     if offline:
         menu_items, menu_obj = _load_sample_menu()
-        coupon_titles = _sample_coupon_titles()
+        coupons = [Coupon(title=t) for t in _sample_coupon_titles()]
     else:
         client = _client(args)
         session = OrderingSession(order_type=args.order_type, be_type=args.be_type)
@@ -1026,11 +1165,11 @@ def cmd_solve(args):
             print("× 菜单为空，无法求解。")
             return
         print("正在读取券包（query-my-coupons / query-store-coupons / available-coupons）…")
-        coupon_titles = _coupon_titles(client, session)
+        coupons = _coupon_titles(client, session)
 
-    rules = parse_coupons(coupon_titles)
+    rules = parse_coupons([c.title for c in coupons])
     usable = sum(1 for r in rules if r.kind != "unknown")
-    print(f"菜单 {len(menu_items)} 款 ｜ 券 {len(coupon_titles)} 张（可解析规则 {usable} 条）")
+    print(f"菜单 {len(menu_items)} 款 ｜ 券 {len(coupons)} 张（可解析规则 {usable} 条）")
 
     # ---- 2) 必选：想吃的那几样 ----
     must: list[str] = []
@@ -1055,14 +1194,20 @@ def cmd_solve(args):
               f"（组合数随件数爆炸，再多也没有更好的解）")
     workers = 1 if offline else max(1, args.workers)
 
-    best: dict[str, float | None] = {"v": None}
+    lookup = _nutrition_lookup()
+    kcal_map = _menu_kcal_map(menu_items, lookup)
+
+    best: dict[str, float | None] = {"v": None, "r": -1.0}
     total_calls = args.top
 
-    def on_progress(done: int, paid: float | None) -> None:
+    def on_progress(done: int, paid: float | None, rate: float) -> None:
+        # 「新的最优」必须与最终选优用同一把尺（省钱率优先、同率取实付更低），
+        # 否则进度宣告的候选会和最终答案对不上——README/落地页展示的「第 2 次
+        # 验价触发 6 折」这条叙事，就依赖这里把省钱率更高的候选也喊出来。
         if paid is None:
             return
-        if best["v"] is None or paid < best["v"]:
-            best["v"] = paid
+        if is_better(rate, paid, best["r"], best["v"]):
+            best["r"], best["v"] = rate, paid
             print(f"  [{done}/{total_calls}] 验价 → 新的最优 ¥{paid:.2f}")
         elif done % 10 == 0:
             print(f"  [{done}/{total_calls}] 验价中…")
@@ -1073,12 +1218,14 @@ def cmd_solve(args):
         pricer = make_remote_pricer(client, session, menu_obj)
 
     # ---- 4) 求解 ----
-    print(f"\n正在搜索最优组合（最多追加 {add} 件，预算 "
-          f"{('¥' + format(args.budget, '.2f')) if args.budget else '不限'}，"
+    budget_txt = f"预算 {('¥' + format(args.budget, '.2f')) if args.budget else '不限'}"
+    kcal_txt = f"，热量 ≤ {args.kcal:.0f} kcal" if args.kcal else ""
+    print(f"\n正在搜索最优组合（最多追加 {add} 件，{budget_txt}{kcal_txt}，"
           f"验价并发 {workers}）…")
     sol = solve(must, menu_items, rules, pricer, budget=args.budget or 0.0,
-                max_add=add, top_n=args.top, nutrition_lookup=_nutrition_lookup(),
-                workers=workers, on_progress=on_progress)
+                max_add=add, top_n=args.top, nutrition_lookup=lookup,
+                workers=workers, on_progress=on_progress,
+                kcal_map=kcal_map, max_kcal=args.kcal)
     if not sol.items:
         if sol.fail_count and sol.fail_count == sol.verify_count:
             print("× 官方验价全部失败（网络或接口异常），不是「没有解」。"
@@ -1204,7 +1351,7 @@ def store_args(sp, *, store: bool = True, pick: bool = True, address: bool = Tru
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="mcd-profile", description="麦麦档案 McProfile")
+    p = argparse.ArgumentParser(prog="mcd-profile", description="麦麦战绩 McProfile")
     p.add_argument("--token", help="mcd-mcp Token（默认读 MCD_MCP_TOKEN 或 mcp-config.example.json）")
     p.add_argument("--offline", action="store_true", help="强制使用离线样例数据")
 
@@ -1214,7 +1361,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sp = sub.add_parser("archive", help="生成并打印麦麦档案")
+    sp = sub.add_parser("archive", help="生成并打印麦麦战绩")
     sp.add_argument("--html", help="导出分享卡片 HTML")
     sp.add_argument("--png", help="导出分享卡片 PNG")
     sp.add_argument("--out", help="把 Markdown 档案写入文件")
@@ -1246,6 +1393,10 @@ def build_parser() -> argparse.ArgumentParser:
     common(sp)
     sp.set_defaults(func=cmd_tools)
 
+    sp = sub.add_parser("doctor", help="环境自检：Token / 连通性 / 工具可用性")
+    common(sp)
+    sp.set_defaults(func=cmd_doctor)
+
     sp = sub.add_parser("card", help="生成分享卡片（HTML+PNG）")
     sp.add_argument("--html")
     sp.add_argument("--png")
@@ -1269,6 +1420,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="仅 --for solve：指定必选商品（缺省取菜单第一项）")
     sp.add_argument("--add", type=int, default=3, help="仅 --for solve：最多追加几件")
     sp.add_argument("--budget", type=float, default=0.0, help="仅 --for solve：实付预算上限")
+    sp.add_argument("--kcal", type=float, default=0.0, help="仅 --for solve：热量上限（kcal），0 不限")
     sp.add_argument("--top", type=int, default=30, help="仅 --for solve：验价候选数")
     common(sp)
     sp.set_defaults(func=cmd_brief)
@@ -1315,6 +1467,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--items", nargs="+", metavar="CODE|名称", required=True,
                     help="必选：你想吃的东西，编码或名称均可，如 --items 板烧鸡腿堡 可乐中杯")
     sp.add_argument("--budget", type=float, default=0.0, help="实付预算上限（元），0 表示不限")
+    sp.add_argument("--kcal", type=float, default=0.0,
+                    help="热量上限（kcal），0 表示不限；配合 --budget 即「预算 × 热量」双约束")
     sp.add_argument("--add", type=int, default=3, help="最多追加几件凑单商品（默认 3）")
     sp.add_argument("--top", type=int, default=30,
                     help="送去官方验价的候选数（默认 30，接口调用量 = 该值）")
@@ -1330,8 +1484,22 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _needs_remote(args) -> bool:
+    """这条命令是否真的会去连 mcd-mcp。
+
+    ``demo`` 与所有 ``--offline`` 命令都不连；``doctor`` 自己就是诊断连通性的，
+    不能被前置检查拦住（否则永远走不到它）。
+    """
+    return _use_remote(args) and args.func not in (cmd_demo, cmd_doctor)
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    # 前置检查：真要联网却没 Token 时，先给一段能照做的指引。
+    # 否则用户拿到的第一个反馈是 mcd-mcp 的 403——看不出缺什么、也不知道去哪补。
+    if _needs_remote(args) and not _resolve_token(args)[0]:
+        print(_setup_guide())
+        raise SystemExit(2)
     args.func(args)
 
 

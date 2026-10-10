@@ -116,6 +116,7 @@ class Coupon:
     title: str
     available_until: str = ""     # 到期时间文本
     is_delivery: bool = False
+    coupon_id: str = ""           # 券标识（官方卡包接口通常不返回，防御性保留）
 
 
 @dataclass
@@ -278,6 +279,7 @@ class CartItem:
     is_combo: bool = False
     image: str = ""             # 商品图 URL
     image_local: str = ""       # 已下载到本地的缩略图路径（供 PNG 嵌入 / HTML 内联）
+    coupon_id: str = ""         # 该单品要核销的券 id（可选；算价时透传 calculate-price）
 
 
 @dataclass
@@ -468,7 +470,15 @@ def parse_coupon(raw: dict) -> Coupon:
             break
     labels2 = (raw.get("instructions") or {}).get("labels") or []
     is_delivery = any("外送" in (lb.get("text") or "") for lb in labels2)
-    return Coupon(title=raw.get("title", ""), available_until=until, is_delivery=is_delivery)
+    # 券标识（couponId / id / code / couponCode / voucherCode / productCode）——
+    # 官方卡包接口实测通常不返回，但**一旦返回就保留**，供算价/下单按需透传。
+    coupon_id = next(
+        (str(raw[k]) for k in ("couponId", "id", "code", "couponCode", "voucherCode",
+                               "productCode") if raw.get(k)),
+        "",
+    )
+    return Coupon(title=raw.get("title", ""), available_until=until, is_delivery=is_delivery,
+                  coupon_id=coupon_id)
 
 
 def parse_prize(raw: dict) -> Prize:

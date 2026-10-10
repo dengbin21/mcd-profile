@@ -216,6 +216,7 @@ class Solution:
     fail_count: int = 0            # 验价失败（网络/协议/业务）次数
     rules: list[CouponRule] = field(default_factory=list)
     nutrition: dict = field(default_factory=dict)
+    max_kcal: float = 0.0          # 热量上限（0 = 不限），枚举/选优时按 kcal_map 剪枝
 
     @property
     def save_rate(self) -> float:
@@ -255,6 +256,19 @@ def grade_of(save_rate: float) -> str:
     if save_rate >= 0.15:
         return "B"
     return "C"
+
+
+def is_better(rate: float, paid: float, best_rate: float,
+              best_paid: float | None) -> bool:
+    """选优判据：**省钱率优先，同率取实付更低**。
+
+    最终选优（:func:`solve`）与 CLI 的验价进度回调**必须共用这一把尺**——
+    否则进度里宣告的「新的最优」会按实付挑、最终答案却按省钱率挑，
+    两者对不上，进度就变成了噪音（见 ``cli.cmd_solve`` 的 ``on_progress``）。
+    """
+    return (best_paid is None
+            or rate > best_rate + 1e-9
+            or (abs(rate - best_rate) < 1e-9 and paid < best_paid))
 
 
 # ---------------------------------------------------------------------- #
@@ -304,17 +318,28 @@ def effective_max_add(pool_size: int, max_add: int, cap: int = MAX_ENUM) -> int:
 def enumerate_candidates(must: list[str], menu_items: dict[str, MenuItem],
                          rules: list[CouponRule], *, budget: float = 0.0,
                          max_add: int = MAX_ADD_DEFAULT,
-                         pool_limit: int = POOL_LIMIT) -> tuple[list[Candidate], int]:
-    """本地枚举候选：必选 + 0..max_add 件追加，按预算剪枝。
+                         pool_limit: int = POOL_LIMIT,
+                         kcal_map: dict[str, float] | None = None,
+                         max_kcal: float = 0.0) -> tuple[list[Candidate], int]:
+    """本地枚举候选：必选 + 0..max_add 件追加，按预算/热量剪枝。
 
-    返回 ``(通过预算的候选, 剪枝前枚举总数)``——两者都如实上报：
-    「试了多少种」用总数，别让预算把数字剪没了。
+    返回 ``(通过剪枝的候选, 剪枝前枚举总数)``——两者都如实上报：
+    「试了多少种」用总数，别让约束把数字剪没了。
+
+    热量剪枝说明：``kcal_map`` 是 ``code -> 单份 kcal``（营养库查不到的记 0，
+    是**下界**）。只剪「下界已超限」的候选——绝不会误杀合规候选，
+    也不会因为缺营养数据而高估热量；覆盖率在产物里另行披露。
 
     列表第一项恒为 baseline（只点必选），它是「你的直觉点法」的对照基准。
     """
     must = [c for c in must if c in menu_items]
     must_items = [menu_items[c] for c in must]
     must_sum = sum(i.price for i in must_items)
+
+    def _kcal(items: list[MenuItem]) -> float:
+        if kcal_map is None:
+            return 0.0
+        return sum(kcal_map.get(i.code, 0.0) for i in items)
 
     out: list[Candidate] = []
     base_paid = max(must_sum - estimate_discount(must_items, rules), 0.0)
@@ -337,6 +362,8 @@ def enumerate_candidates(must: list[str], menu_items: dict[str, MenuItem],
             items = must_items + list(combo)
             subtotal = sum(i.price for i in items)
             if budget and subtotal > budget * 1.25:      # 留 25% 余量给优惠拉回
+                continue
+            if max_kcal and _kcal(items) > max_kcal:     # 热量下界已超限才剪
                 continue
             est_paid = max(subtotal - estimate_discount(items, rules), 0.0)
             if budget and est_paid > budget:
@@ -418,35 +445,58 @@ def _verify_batch(batch: list[Candidate], pricer, *, workers: int = 1,
 
 
 def _report(on_progress, done: int, res) -> None:
-    """回调格式 ``(已完成数, 本次实付 or None)``——注意取 paid 而非 discount。"""
+    """回调格式 ``(已完成数, 本次实付 or None, 本次省钱率 or 0.0)``。
+
+    传 paid 之外再传省钱率：进度展示与最终选优必须用同一把尺
+    （省钱率优先、同率取实付更低），否则进度宣告的「新的最优」
+    会与最终答案对不上。
+    """
     if on_progress:
-        on_progress(done, res[2] if res else None)
+        if res:
+            original, paid, discount = res[1], res[2], res[3]
+            on_progress(done, paid, (discount / original) if original else 0.0)
+        else:
+            on_progress(done, None, 0.0)
 
 
 def solve(must: list[str], menu_items: dict[str, MenuItem], rules: list[CouponRule],
           pricer, *, budget: float = 0.0, max_add: int = MAX_ADD_DEFAULT,
           top_n: int = VERIFY_TOP_N, nutrition_lookup=None,
-          workers: int = 1, on_progress=None) -> Solution:
+          workers: int = 1, on_progress=None,
+          kcal_map: dict[str, float] | None = None,
+          max_kcal: float = 0.0) -> Solution:
     """求解最优组合。
 
     ``pricer`` 是验价器：``pricer(list[tuple[code, qty]]) -> (original, paid, discount)``。
     真实模式下它调 ``calculate-price``；离线模式下用本地规则估算（仅用于演示）。
 
     ``workers`` 控制验价并发度（真实模式的提速开关；离线模式恒为 1 也无妨）。
+
+    ``kcal_map``（code -> 单份 kcal，查不到的记 0）配合 ``max_kcal`` 做**热量约束**：
+    枚举阶段剪「热量下界已超限」的候选，选优阶段再过滤一次，保证最终答案
+    同时满足预算与热量两个上限。
     """
     cands, total_seen = enumerate_candidates(must, menu_items, rules, budget=budget,
-                                             max_add=max_add)
+                                             max_add=max_add, kcal_map=kcal_map,
+                                             max_kcal=max_kcal)
     batch = pick_verify_batch(cands, top_n=top_n)
     results = _verify_batch(batch, pricer, workers=workers, on_progress=on_progress)
 
     sol = Solution(rules=list(rules), enum_count=total_seen, valid_count=len(cands),
                    verify_count=len(batch), verify_ok=len(results),
-                   fail_count=len(batch) - len(results))
+                   fail_count=len(batch) - len(results), max_kcal=max_kcal)
     best_rate = -1.0
     best_paid: float | None = None
 
+    def _kcal_of(codes) -> float:
+        if kcal_map is None:
+            return 0.0
+        return sum(kcal_map.get(c, 0.0) for c in codes)
+
     for idx, original, paid, discount in results:
         if budget and paid > budget:
+            continue
+        if max_kcal and _kcal_of(batch[idx].codes) > max_kcal:
             continue
 
         # 第一个候选即 baseline（只点必选）
@@ -456,10 +506,7 @@ def solve(must: list[str], menu_items: dict[str, MenuItem], rules: list[CouponRu
 
         # 主指标省钱率，同率时取实付更低者——「划算」优先于「便宜」
         rate = (discount / original) if original else 0.0
-        better = (best_paid is None
-                  or rate > best_rate + 1e-9
-                  or (abs(rate - best_rate) < 1e-9 and best_paid is not None and paid < best_paid))
-        if better:
+        if is_better(rate, paid, best_rate, best_paid):
             best_rate, best_paid = rate, paid
             sol.original, sol.paid, sol.discount = original, paid, discount
             sol.items = [_cart(code, menu_items) for code in batch[idx].codes]

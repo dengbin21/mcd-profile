@@ -99,8 +99,9 @@ td b{color:#FFC72C}
   穷举上千种组合，逐一让官方接口验价，挑出这一单<b class="gold">最划算</b>的买法。<br>
   全程只读——不领券、不抽奖、<b class="gold">不产生任何订单</b>。</p>
   <p class="muted" style="margin-top:10px">下面这台求解器用的是<b class="gold">脱敏样例数据 + 纯前端演算</b>，
-  券规则、枚举与省钱率口径和命令行工具<b>完全一致</b>，但<b>不发任何请求</b>——
-  要真的让官方接口逐单验价，请联网跑 CLI（见页尾）。</p>
+  券规则、枚举与省钱率口径和命令行工具<b>一致</b>，但<b>不发任何请求</b>——
+  联网跑 CLI 时还会多一步「只对 Top-30 候选调官方 <code>calculate-price</code> 验真实价」，
+  最终实付以官方为准（见页尾）。</p>
   <div class="stats">
     <div class="stat"><b>2325</b><span>本地枚举组合</span></div>
     <div class="stat"><b>40%</b><span>最优解省钱率</span></div>
@@ -168,15 +169,16 @@ td b{color:#FFC72C}
 
 <div class="sec">
   <h2>它到底在算什么</h2>
-  <p class="muted">联网跑命令行工具时，终端会这么跑（下面是真实账号实跑的输出，
-  因此券数与本页演算用的脱敏样例并不相同）：</p>
+  <p class="muted">下面是用命令行工具跑 <code>--offline</code>（脱敏样例数据）时的<b>真实输出</b>——
+  联网跑时除了「验价」一步换成官方 <code>calculate-price</code> 逐单验价，其余完全一样：</p>
   <div class="log">菜单 47 款 ｜ 券 8 张（可解析规则 6 条）
 必选：板烧鸡腿堡
-正在搜索最优组合（最多追加 3 件）…
-  [1]  验价 → 新的最优 ¥21.50
-  [2]  验价 → 新的最优 ¥21.90   ← 触发「三件任选6折」
-  …
-  [30] 验价完成
+正在搜索最优组合（最多追加 3 件，预算 不限，验价并发 1）…
+  [1/30]  验价 → 新的最优 ¥21.50
+  [2/30]  验价 → 新的最优 ¥21.90   ← 触发「三件任选6折」
+  [10/30] 验价中…
+  [20/30] 验价中…
+  [30/30] 验价中…
 
 直觉点法   1 件   ¥21.50   均价 ¥21.50
 算法最优解 3 件   ¥21.90   均价 ¥7.30
@@ -374,21 +376,33 @@ const COUPONS=[
  {title:"免费中薯条",until:"2026.12.01 23:59"}
 ];
 const POINTS=1320.1, REDEEM=[100,200,500,800,1600];
-const P_MISS=25,P_URGENT=10,P_NOCOUPON=20,B_RUNNING=5,B_POINTS=5,URGENT_DAYS=7;
+// URGENT_CAP：临期扣分封顶——手里一堆临期券是弹药足，不是「裸奔进场」
+const P_MISS=25,P_URGENT=10,P_NOCOUPON=20,B_RUNNING=5,B_POINTS=5,URGENT_DAYS=7,URGENT_CAP=3;
 
-function pd(s){
-  if(!s) return null;
+// 与 src/preheat.py 的 _date_candidates 同口径：把文案里的日期**全部**抠出来。
+// 券面到期会写成区间「2026.10.05-2026.10.11」——只取第一段会把「明天到期」
+// 判成 5 天前已过期，于是页面上多出一条根本不存在的冲突。
+function pdAll(s){
+  if(!s) return [];
   let t=String(s).trim().split(" ")[0].split("T")[0];
   t=t.replace(/[月日号].*$/,"");
   const p=t.split(/[.\-/年]/).filter(Boolean);
-  if(p.length<2) return null;
-  const n=p.slice(0,3).map(Number);
-  if(n.some(isNaN)) return null;
-  const y=p.length===2?new Date().getFullYear():n[0];
-  const m=p.length===2?n[0]:n[1], d=p.length===2?n[1]:n[2];
-  const dt=new Date(y,m-1,d);
-  return isNaN(dt.getTime())?null:dt;
+  if(p.length<2) return [];
+  const n=p.map(Number);
+  if(n.some(isNaN)) return [];
+  let y=new Date().getFullYear(), i=0; const out=[];
+  while(i<n.length){
+    let m,d;
+    if(n[i]>=1000 && i+3<=n.length){ y=n[i]; m=n[i+1]; d=n[i+2]; i+=3; }
+    else if(i+2<=n.length){ m=n[i]; d=n[i+1]; i+=2; }
+    else break;
+    const dt=new Date(y,m-1,d);
+    if(!isNaN(dt.getTime())) out.push(dt);
+  }
+  return out;
 }
+function pd(s){const a=pdAll(s); return a.length?a[0]:null;}          // 活动：取开始日
+function pu(s){const a=pdAll(s); return a.length?a[a.length-1]:null;} // 券到期：取结束日
 function dayDiff(a,b){return Math.round((a.getTime()-b.getTime())/86400000);}
 
 function buildPreheat(todayISO){
@@ -404,7 +418,9 @@ function buildPreheat(todayISO){
     }
   }
   const cps=COUPONS.map(c=>{
-    const u=pd(c.until);
+    let u=pu(c.until);
+    // 官方把「今天到期」写成「今日」——明确无歧义，不当成读不懂
+    if(!u && ["今日","今天"].indexOf(String(c.until||"").trim())>=0) u=today;
     return {title:c.title,until:c.until,days:u?dayDiff(u,today):null,
             survives:(u&&td)?(u.getTime()>=td.getTime()):null};
   }).sort((a,b)=>(a.days===null?1e9:a.days)-(b.days===null?1e9:b.days));
@@ -412,10 +428,11 @@ function buildPreheat(todayISO){
   const surviving=cps.filter(w=>w.survives===true);
   const urgent=cps.filter(w=>w.survives!==false&&w.days!==null&&w.days>=0&&w.days<=URGENT_DAYS);
   const floor=Math.min.apply(null,REDEEM);
+  const uPen=Math.min(urgent.length,URGENT_CAP);   // 临期扣分封顶，与 src/preheat.py 同口径
   let score;
-  if(!target) score=Math.max(0,Math.min(100,80-P_URGENT*urgent.length));
+  if(!target) score=Math.max(0,Math.min(100,80-P_URGENT*uPen));
   else{
-    score=100-P_MISS*missing.length-P_URGENT*urgent.length;
+    score=100-P_MISS*missing.length-P_URGENT*uPen;
     if(!surviving.length) score-=P_NOCOUPON;
     if(running.length) score+=B_RUNNING;
     if(POINTS>=floor) score+=B_POINTS;
