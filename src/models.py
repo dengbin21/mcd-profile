@@ -467,7 +467,7 @@ def parse_coupon(raw: dict) -> Coupon:
             until = lb["text"]
             break
     labels2 = (raw.get("instructions") or {}).get("labels") or []
-    is_delivery = any("外送" in (l.get("text") or "") for l in labels2)
+    is_delivery = any("外送" in (lb.get("text") or "") for lb in labels2)
     return Coupon(title=raw.get("title", ""), available_until=until, is_delivery=is_delivery)
 
 

@@ -73,7 +73,7 @@ def _radar_svg(radar: dict[str, int], primary: str = "#DA291C",
         f"{x:.1f},{y:.1f}" for x, y in (pt(i, R * max(0.08, v / 100)) for i, (_, v) in enumerate(dims))
     )
     labels = []
-    for i, (name, v) in enumerate(dims):
+    for i, (name, _) in enumerate(dims):
         x, y = pt(i, R + 22)
         anchor = "middle" if abs(x - cx) < 6 else ("start" if x > cx else "end")
         labels.append(f'<text x="{x:.1f}" y="{y:.1f}" font-size="11" fill="#b9b4ab" '

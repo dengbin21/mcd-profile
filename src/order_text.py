@@ -38,9 +38,9 @@ _FUZZY_GAP = 0.05
 # ---------------------------------------------------------------------- #
 def _strip_paren_note(t: str) -> str:
     """去掉「（门店，取餐方式）」之类的括注——括号成对时整体剥离。"""
-    for l, r in (("（", "）"), ("(", ")")):
-        while l in t and r in t:
-            t = t[:t.index(l)] + " " + t[t.index(r) + 1:]
+    for lp, rp in (("（", "）"), ("(", ")")):
+        while lp in t and rp in t:
+            t = t[:t.index(lp)] + " " + t[t.index(rp) + 1:]
     return t
 
 

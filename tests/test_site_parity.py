@@ -107,7 +107,7 @@ def test_site_solver_matches_python():
     kinds = {r.kind for r in rules}
     assert "bundle" in kinds and "threshold" in kinds, f"券规则解析异常：{kinds}"
 
-    for case, js_res in zip(CASES, data["results"]):
+    for case, js_res in zip(CASES, data["results"], strict=True):
         codes, budget = case
         sol = solve(list(codes), menu, rules, make_offline_pricer(menu, rules),
                     budget=budget, max_add=3, top_n=9999)
@@ -164,7 +164,7 @@ def test_site_preheat_matches_python():
                for c in data["coupons"]]
     assert campaigns and coupons, "页面缺少预热台数据"
 
-    for day, js in zip(PREHEAT_DAYS, data["results"]):
+    for day, js in zip(PREHEAT_DAYS, data["results"], strict=True):
         y, m, d = (int(x) for x in day.split("-"))
         pre = build_preheat(campaigns, coupons, today=date(y, m, d),
                             points=1320.1, redeem_points=[100, 200, 500, 800, 1600])

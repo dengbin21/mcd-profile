@@ -48,12 +48,10 @@ def build_persona(orders: list[Order], cons: Consumption, health: Health,
     slots = cons.meal_dist
     breakfast = slots.get("早餐", 0) / n
     late = slots.get("深夜", 0) / n
-    dinner = slots.get("晚餐", 0) / n
 
     beef = _count(valid, _BEEF) / n
     chicken = _count(valid, _CHICKEN) / n
     fish = _count(valid, _FISH) / n
-    fried = _count(valid, _FRIED) / n
     coffee = _count(valid, _COFFEE) / n
     dessert = _count(valid, _DESSERT) / n
     combo = _count(valid, _COMBO) / n

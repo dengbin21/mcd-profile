@@ -7,7 +7,7 @@ from ..textpack import CopyPack, TextResolver
 from ..theme import theme_for
 from .base import (
     TOOL_DESC, eff_advice, eff_badges, eff_label, eff_quips,
-    eff_radar, eff_slogan, eff_tags, fmt_expiring, img_ref, resolver, yuan,
+    eff_slogan, eff_tags, fmt_expiring, img_ref, resolver, yuan,
 )
 
 
@@ -41,9 +41,9 @@ def _report_markdown(a: Archive, R: TextResolver) -> list[str]:
     if r.kcal:
         L.append(f"- 这一单热量 **{r.kcal:.0f} kcal**（≈ {r.bigmac_equiv} 个巨无霸）、钠 {r.sodium:.0f} mg")
     if r.placed and r.order_id:
-        L.append(f"- " + R("lbl.report_placed_note", oid=r.order_id, status=r.status or ""))
+        L.append("- " + R("lbl.report_placed_note", oid=r.order_id, status=r.status or ""))
     else:
-        L.append(f"- " + R("lbl.report_preview_note"))
+        L.append("- " + R("lbl.report_preview_note"))
     L.append("")
     return L
 

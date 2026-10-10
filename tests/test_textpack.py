@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.preheat import build_preheat                                        # noqa: E402
-from src.preheat_report import render_preheat_html, render_preheat_markdown  # noqa: E402
+from src.preheat_report import render_preheat_markdown  # noqa: E402
 from src.solve_report import render_solve_html, render_solve_markdown        # noqa: E402
 from src.solver import make_offline_pricer, parse_coupons, solve             # noqa: E402
 from src.textpack import (                                                   # noqa: E402
@@ -100,7 +100,6 @@ def test_known_number_passes():
 def test_preheat_headline_and_grade_override():
     """模型整句覆写钩子句与评级词，且**不影响任何数值**。"""
     pre = build_preheat(_campaigns(), _coupons(), today=_TODAY)
-    base_md = render_preheat_markdown(pre)
 
     pack = CopyPack(preheat={"headline": "还有 7 天，但你 1 张券撑不到",
                              "grade_word": "还差一口气"})

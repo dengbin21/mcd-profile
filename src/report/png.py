@@ -80,7 +80,7 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
     plt.rcParams["axes.unicode_minus"] = False
 
     c, h, b, p = a.consumption, a.health, a.benefit, a.persona
-    s, hb = a.savings, a.habit
+    s = a.savings
     th = theme_for(p)
     primary, accent = th.primary, th.accent
     R = resolver(copy)
@@ -118,7 +118,10 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
         return (v - y_final + BOTTOM_PAD) / D
 
     fig = plt.figure(figsize=(10.8, fig_h), dpi=100)
-    bgax = fig.add_axes([0, 0, 1, 1]); bgax.axis("off"); bgax.set_xlim(0, 1); bgax.set_ylim(0, 1)
+    bgax = fig.add_axes([0, 0, 1, 1])
+    bgax.axis("off")
+    bgax.set_xlim(0, 1)
+    bgax.set_ylim(0, 1)
     _vert_gradient(bgax, th.bg, th.bg2)
 
     def panel(y0, y1, x0=0.06, x1=0.94, color="white", alpha=0.05):
@@ -198,8 +201,10 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
             angv = [n / len(dims) * 2 * math.pi for n in range(len(dims))] + [0]
             ax.plot(angv, vals + vals[:1], color=primary, linewidth=2.2)
             ax.fill(angv, vals + vals[:1], color=primary, alpha=0.25)
-            ax.set_xticks(angv[:-1]); ax.set_xticklabels([_png_plain(x) for x in labels], color="#b9b4ab", fontsize=9)
-            ax.set_yticks([]); ax.grid(color="#494541", linewidth=0.6)
+            ax.set_xticks(angv[:-1])
+            ax.set_xticklabels([_png_plain(x) for x in labels], color="#b9b4ab", fontsize=9)
+            ax.set_yticks([])
+            ax.grid(color="#494541", linewidth=0.6)
             ax.spines["polar"].set_color("#494541")
             lights = h.lights
             text(0.085, y - hh + 0.030,

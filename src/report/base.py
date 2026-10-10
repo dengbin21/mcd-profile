@@ -10,7 +10,7 @@ from __future__ import annotations
 from .. import images
 from ..archive import Archive
 from ..textpack import CopyPack, TextResolver
-from ..theme import Badge, Theme, build_badges, build_quips, theme_for
+from ..theme import Badge, Theme, build_badges, build_quips
 
 # 工具中文名（用于覆盖清单可读化）
 TOOL_DESC = {

@@ -156,9 +156,8 @@ def estimate_discount(items: list[MenuItem], rules: list[CouponRule]) -> float:
     for r in rules:
         if r.kind == "threshold" and subtotal >= r.threshold:
             best = max(best, r.off)
-        elif r.kind == "bundle" and count >= r.need:
-            best = max(best, subtotal * (1.0 - r.off))
-        elif r.kind == "percent":
+        elif (r.kind == "bundle" and count >= r.need) or r.kind == "percent":
+            # bundle 需凑够件数、percent 无门槛，两者的折扣算式相同
             best = max(best, subtotal * (1.0 - r.off))
         elif r.kind == "free" and r.free_name and r.free_name in names:
             for i in items:
