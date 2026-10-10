@@ -54,6 +54,7 @@ from src.ordering import (                                                 # noq
     quote as calc_quote, verify,
 )
 from src.report import render_card_html, render_card_png, render_markdown   # noqa: E402
+from src.sources import TOOL_PLAN                                           # noqa: E402
 from src.preheat import build_preheat                                       # noqa: E402
 from src.preheat_report import (                                            # noqa: E402
     render_preheat_html, render_preheat_markdown,
@@ -384,11 +385,37 @@ def cmd_store(args):
             print(f"- {t}")
 
 
+# 离线时没有调用日志，但仍要能自证「本会调用哪些工具」——这是本作品的卖点之一，
+# 空清单等于把卖点藏起来了。用途写在这里（展示层的事，不进采集层）。
+_TOOL_PURPOSE = {
+    "order-list": "历史订单", "query-order": "单笔优惠明细（算省钱率）",
+    "query-my-account": "积分账户", "query-my-coupons": "手持券与到期日",
+    "query-my-prizes": "奖品", "query-lottery-info": "抽奖活动",
+    "available-coupons": "麦麦省可领券",
+    "mall-order-list": "商城订单", "mall-order-detail": "商城订单详情",
+    "mall-points-products": "积分兑换力",
+    "query-nearby-stores": "附近门店", "delivery-query-addresses": "外送地址",
+    "delivery-query-stores": "外送门店", "query-meals": "全菜单（图+价）",
+    "query-meal-detail": "商品详情", "query-store-coupons": "门店活动券",
+    "calculate-price": "官方验价（McSolve 引擎）",
+    "campaign-calendar": "活动日历（McPreheat）", "now-time-info": "服务器时间",
+    "list-nutrition-foods": "营养库",
+}
+
+
 def cmd_tools(args):
     a = build_archive(_client(args), use_remote=_use_remote(args))
     print("# MCP 工具覆盖清单\n")
     if not a.raw.tool_calls:
-        print("（离线演示模式，未实时调用 MCP。）")
+        # 离线：展示「计划调用」的完整清单，而不是一句「未实时调用」了事
+        print("（离线演示模式，未实时调用 MCP。下面是本作品的**工具覆盖计划**。）\n")
+        print("| MCP 工具 | 用途 |")
+        print("|---|---|")
+        for t in TOOL_PLAN:
+            print(f"| `{t}` | {_TOOL_PURPOSE.get(t, '')} |")
+        print(f"\n共 **{len(TOOL_PLAN)}** 个官方只读工具；"
+              f"`create-order` 为唯一写操作，默认关闭。")
+        print("\n> 接上 Token 去掉 `--offline`，这里会显示本次实际调用与各自产出。")
         return
     print(f"本次共调用 **{a.meta['tools_called']}** 个官方 MCP 只读工具（成功 {a.meta['tools_ok']} 个）。\n")
     print("| MCP 工具 | 状态 | 产出 |")
@@ -401,27 +428,41 @@ def cmd_tools(args):
 
 
 def cmd_card(args):
+    """导出分享卡片。
+
+    以前「没给 --png 就默认写回仓库 examples/」——跑一次命令就把仓库里的示例文件
+    悄悄覆盖了（连自己人都踩过）。现在：不给 --png 就**不碰仓库**，长图变成显式选项。
+    """
     copy = _copy(args)
     a = build_archive(_client(args), use_remote=_use_remote(args))
     html_path = args.html or (ROOT / "examples" / "profile_card.html")
     Path(html_path).write_text(render_card_html(a, copy), encoding="utf-8")
     print(f"分享卡片已写入：{html_path}")
-    png = render_card_png(a, args.png or (ROOT / "examples" / "profile_card.png"), copy)
+    if not args.png:
+        print("（未指定 --png，跳过长图；加 `--png out.png` 可导出竖版分享图）")
+        return
+    png = render_card_png(a, args.png, copy)
     if png:
         print(f"卡片图已生成：{png}")
 
 
 def cmd_demo(args):
-    """离线演示：用样例数据生成档案 + 卡片，无需 Token。"""
+    """离线演示：用样例数据生成档案 + 卡片，无需 Token。
+
+    默认仍写进 ``examples/``（这条命令的用途就是产出示例），但加了 ``--out-dir``，
+    既能指到别处、也让测试可以不污染仓库。
+    """
     copy = _copy(args)
     a = build_archive(None, use_remote=False, order_report=load_meal_report_sample())
     md = render_markdown(a, copy)
-    (ROOT / "examples" / "demo_profile.md").write_text(md, encoding="utf-8")
-    print("[demo] examples/demo_profile.md")
-    (ROOT / "examples" / "profile_card.html").write_text(render_card_html(a, copy), encoding="utf-8")
-    print("[demo] examples/profile_card.html")
-    png = render_card_png(a, ROOT / "examples" / "profile_card.png", copy)
-    print("[demo] examples/profile_card.png" if png else "[demo] （跳过 PNG）")
+    out_dir = Path(args.out_dir) if getattr(args, "out_dir", None) else ROOT / "examples"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "demo_profile.md").write_text(md, encoding="utf-8")
+    print(f"[demo] {out_dir / 'demo_profile.md'}")
+    (out_dir / "profile_card.html").write_text(render_card_html(a, copy), encoding="utf-8")
+    print(f"[demo] {out_dir / 'profile_card.html'}")
+    png = render_card_png(a, out_dir / "profile_card.png", copy)
+    print(f"[demo] {out_dir / 'profile_card.png'}" if png else "[demo] （跳过 PNG）")
     print()
     print(md)
 
@@ -1118,6 +1159,27 @@ def cmd_menu(args):
 # ---------------------------------------------------------------------- #
 # 参数解析
 # ---------------------------------------------------------------------- #
+def store_args(sp, *, store: bool = True, pick: bool = True, address: bool = True) -> None:
+    """门店选择参数组。
+
+    ``stores`` / ``menu`` / ``eat`` / ``solve`` 四个命令都要选店，此前各写一遍、
+    文案和默认值已经开始漂移（同一个 ``--be-type`` 四种说法）。收成一处：
+    **改一次，四处一致**。
+    """
+    if store:
+        sp.add_argument("--store", help="直接指定门店 code（跳过选店）")
+    sp.add_argument("--search", type=int, default=1, help="1=收藏餐厅（默认）2=按位置搜索")
+    sp.add_argument("--city", default="", help="searchType=2 时的城市名")
+    if pick:
+        sp.add_argument("--pick", type=int, help="非交互式：直接选第 N 家门店（1 起）")
+    if store or pick:
+        sp.add_argument("--order-type", type=int, default=1, help="1 到店 / 2 外送")
+    sp.add_argument("--be-type", type=int, default=1,
+                    help="1 到店自取 / 2 麦乐送 / 5 得来速 / 6 团餐")
+    if address:
+        sp.add_argument("--address", help="外送地址 id（be-type=2 时）")
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="mcd-profile", description="麦麦档案 McProfile")
     p.add_argument("--token", help="mcd-mcp Token（默认读 MCD_MCP_TOKEN 或 mcp-config.example.json）")
@@ -1134,34 +1196,46 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--png", help="导出分享卡片 PNG")
     sp.add_argument("--out", help="把 Markdown 档案写入文件")
     sp.add_argument("--copy", help="注入 WorkBuddy 生成的文案包 JSON（覆盖全部展示文案）")
-    common(sp); sp.set_defaults(func=cmd_archive)
+    common(sp)
+    sp.set_defaults(func=cmd_archive)
 
     sp = sub.add_parser("orders", help="查看历史订单")
-    common(sp); sp.set_defaults(func=cmd_orders)
+    common(sp)
+    sp.set_defaults(func=cmd_orders)
 
     sp = sub.add_parser("savings", help="查看省钱复盘")
-    common(sp); sp.set_defaults(func=cmd_savings)
+    common(sp)
+    sp.set_defaults(func=cmd_savings)
 
     sp = sub.add_parser("account", help="查看积分与券")
-    common(sp); sp.set_defaults(func=cmd_account)
+    common(sp)
+    sp.set_defaults(func=cmd_account)
 
     sp = sub.add_parser("campaign", help="查看近期活动")
-    common(sp); sp.set_defaults(func=cmd_campaign)
+    common(sp)
+    sp.set_defaults(func=cmd_campaign)
 
     sp = sub.add_parser("store", help="查看门店与地址")
-    common(sp); sp.set_defaults(func=cmd_store)
+    common(sp)
+    sp.set_defaults(func=cmd_store)
 
     sp = sub.add_parser("tools", help="查看 MCP 工具覆盖清单")
-    common(sp); sp.set_defaults(func=cmd_tools)
+    common(sp)
+    sp.set_defaults(func=cmd_tools)
 
     sp = sub.add_parser("card", help="生成分享卡片（HTML+PNG）")
-    sp.add_argument("--html"); sp.add_argument("--png")
+    sp.add_argument("--html")
+    sp.add_argument("--png")
     sp.add_argument("--copy", help="注入 WorkBuddy 生成的文案包 JSON")
-    common(sp); sp.set_defaults(func=cmd_card)
+    common(sp)
+    sp.set_defaults(func=cmd_card)
 
     sp = sub.add_parser("demo", help="离线演示")
     sp.add_argument("--copy", help="注入 WorkBuddy 生成的文案包 JSON")
-    common(sp); sp.set_defaults(func=cmd_demo)
+    sp.add_argument("--out-dir", dest="out_dir",
+                    help="示例产物输出目录（默认 examples/）")
+    common(sp)
+    sp.set_defaults(func=cmd_demo)
 
     sp = sub.add_parser("brief", help="导出文案素材（交给 WorkBuddy 写文案）")
     sp.add_argument("--for", dest="scene", choices=["archive", "solve", "preheat"],
@@ -1173,34 +1247,24 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--add", type=int, default=3, help="仅 --for solve：最多追加几件")
     sp.add_argument("--budget", type=float, default=0.0, help="仅 --for solve：实付预算上限")
     sp.add_argument("--top", type=int, default=30, help="仅 --for solve：验价候选数")
-    common(sp); sp.set_defaults(func=cmd_brief)
+    common(sp)
+    sp.set_defaults(func=cmd_brief)
 
     # —— 点餐闭环 ——
     sp = sub.add_parser("stores", help="查看可选门店（点餐前用）")
-    sp.add_argument("--search", type=int, default=1, help="1=收藏餐厅（默认）2=按位置搜索")
-    sp.add_argument("--city", default="", help="searchType=2 时的城市名")
-    sp.add_argument("--be-type", type=int, default=1, help="1 到店自取 / 2 麦乐送 / 5 得来速 / 6 团餐")
-    common(sp); sp.set_defaults(func=cmd_eat_list)
+    store_args(sp, store=False, pick=False, address=False)
+    common(sp)
+    sp.set_defaults(func=cmd_eat_list)
 
     sp = sub.add_parser("menu", help="生成可视化点餐菜单（带图带价 + 点选导出点餐话术）")
-    sp.add_argument("--store", help="门店 code（缺省则先选店）")
-    sp.add_argument("--search", type=int, default=1, help="1=收藏餐厅（默认）2=按位置搜索")
-    sp.add_argument("--city", default="", help="searchType=2 时的城市名")
-    sp.add_argument("--pick", type=int, help="非交互式：直接选第 N 家门店（1 起）")
-    sp.add_argument("--order-type", type=int, default=1, help="1 到店 / 2 外送")
-    sp.add_argument("--be-type", type=int, default=1, help="1 到店自取 / 2 麦乐送 / 5 得来速 / 6 团餐")
+    store_args(sp, address=False)
     sp.add_argument("--embed", action="store_true", help="把商品图转 data-uri 内嵌（单文件自包含，体积较大）")
     sp.add_argument("--out", help="输出 HTML 路径（默认 examples/menu_<store>.html）")
-    common(sp); sp.set_defaults(func=cmd_menu)
+    common(sp)
+    sp.set_defaults(func=cmd_menu)
 
     sp = sub.add_parser("eat", help="点餐闭环：选店→选餐→算价→(确认)下单→生成分享档案")
-    sp.add_argument("--store", help="直接指定门店 code（跳过选店）")
-    sp.add_argument("--search", type=int, default=1, help="1=收藏餐厅（默认）2=按位置搜索")
-    sp.add_argument("--city", default="", help="searchType=2 时的城市名")
-    sp.add_argument("--pick", type=int, help="非交互式：直接选第 N 家门店（1 起）")
-    sp.add_argument("--order-type", type=int, default=1, help="1 到店 / 2 外送")
-    sp.add_argument("--be-type", type=int, default=1, help="1 到店自取 / 2 麦乐送 / 5 得来速 / 6 团餐")
-    sp.add_argument("--address", help="外送地址 id（be-type=2 时）")
+    store_args(sp)
     sp.add_argument("--items", nargs="+", metavar="CODE|名称:QTY",
                     help="直接指定商品，编码或名称均可，如 --items 9900016076:1 麦辣鸡腿汉堡:2")
     sp.add_argument("--take-way", help="取餐方式 code（默认取算价返回的第一项）")
@@ -1211,7 +1275,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--share", metavar="PATH",
                     help="分享档案输出：.html / .png / .md，或前缀（同时出 HTML+PNG）")
     sp.add_argument("--copy", help="注入 WorkBuddy 生成的文案包 JSON")
-    common(sp); sp.set_defaults(func=cmd_eat)
+    common(sp)
+    sp.set_defaults(func=cmd_eat)
 
     # —— 麦麦预热台 ——
     sp = sub.add_parser("preheat",
@@ -1219,7 +1284,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--html", help="预热卡输出路径（默认 examples/preheat_report.html）")
     sp.add_argument("--copy", help="注入 WorkBuddy 生成的文案包 JSON（覆盖除数值外的全部文字）")
     sp.add_argument("--brief", help="同时给出 brief 文件，可一并校验文案里有没有编造的数字")
-    common(sp); sp.set_defaults(func=cmd_preheat)
+    common(sp)
+    sp.set_defaults(func=cmd_preheat)
 
     # —— 麦麦最优解 ——
     sp = sub.add_parser("solve", help="麦麦最优解：穷举 + 官方验价，算出这一单怎么点最划算（全程只读）")
@@ -1231,17 +1297,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="送去官方验价的候选数（默认 30，接口调用量 = 该值）")
     sp.add_argument("--workers", type=int, default=4,
                     help="验价并发度（默认 4；30 次串行 HTTP 是唯一耗时点，并发可大幅提速）")
-    sp.add_argument("--store", help="直接指定门店 code（跳过选店）")
-    sp.add_argument("--search", type=int, default=1, help="1=收藏餐厅（默认）2=按位置搜索")
-    sp.add_argument("--city", default="", help="searchType=2 时的城市名")
-    sp.add_argument("--pick", type=int, help="非交互式：直接选第 N 家门店（1 起）")
-    sp.add_argument("--order-type", type=int, default=1, help="1 到店 / 2 外送")
-    sp.add_argument("--be-type", type=int, default=1, help="1 到店自取 / 2 麦乐送 / 5 得来速 / 6 团餐")
-    sp.add_argument("--address", help="外送地址 id（be-type=2 时）")
+    store_args(sp)
     sp.add_argument("--html", help="战报卡片输出路径（默认 examples/solve_report.html）")
     sp.add_argument("--copy", help="注入 WorkBuddy 生成的文案包 JSON（覆盖除数值外的全部文字）")
     sp.add_argument("--brief", help="同时给出 brief 文件，可一并校验文案里有没有编造的数字")
-    common(sp); sp.set_defaults(func=cmd_solve)
+    common(sp)
+    sp.set_defaults(func=cmd_solve)
 
     return p
 

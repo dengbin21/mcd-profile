@@ -20,8 +20,8 @@ import json
 from pathlib import Path
 
 from .models import (
-    AvailableCoupon, CampaignEvent, Coupon, DeliveryAddress, MealInfo, Order,
-    PriceQuote, Prize, RawArchive, RedeemableProduct, StoreInfo, ToolCall,
+    CampaignEvent, MealInfo, Order,
+    PriceQuote, RawArchive, ToolCall,
     enrich_order, parse_account, parse_address, parse_available_coupon,
     parse_campaign, parse_coupon, parse_lottery, parse_mall_order, parse_order,
     parse_prize, parse_redeem_product, parse_store,
@@ -35,6 +35,21 @@ MARKETING_SAMPLE = DATA_DIR / "marketing_sample.json"
 
 MAX_ENRICH = 40          # 最多用 query-order 补全多少张订单
 MAX_MALL_DETAIL = 6      # 最多补全多少张商城订单详情
+
+# 本作品的 MCP 工具覆盖计划：20 个只读工具（写在模块级，离线时也能自证「会调哪些」）。
+# 顺序即档案里「工具覆盖清单」的展示顺序；``list-nutrition-foods`` 由营养模块单独调，
+# 不在采集日志里，故汇总时用 ``[t for t in TOOL_PLAN if t in log]`` 过滤。
+TOOL_PLAN = [
+    "order-list", "query-order",                                  # 订单
+    "query-my-account", "query-my-coupons", "query-my-prizes",     # 权益
+    "query-lottery-info", "available-coupons",
+    "mall-order-list", "mall-order-detail", "mall-points-products",  # 商城
+    "query-nearby-stores", "delivery-query-addresses",               # 场景
+    "delivery-query-stores", "query-meals", "query-meal-detail",
+    "query-store-coupons", "calculate-price",
+    "campaign-calendar", "now-time-info",                            # 营销
+    "list-nutrition-foods",                                          # 营养
+]
 
 
 # ---------------------------------------------------------------------- #
@@ -289,12 +304,7 @@ def _collect_remote(client) -> RawArchive:
     safe("now-time-info", lambda d: (setattr(arch, "server_time", (d or {}).get("formatted", "")) or 1) if isinstance(d, dict) else 0)
 
     # ---- 汇总日志 ------------------------------------------------------- #
-    order = ["order-list", "query-order", "query-my-account", "query-my-coupons",
-             "query-my-prizes", "query-lottery-info", "available-coupons",
-             "mall-order-list", "mall-order-detail", "mall-points-products",
-             "query-nearby-stores", "delivery-query-addresses", "delivery-query-stores",
-             "query-meals", "query-meal-detail", "query-store-coupons", "calculate-price",
-             "campaign-calendar", "now-time-info"]
+    order = [t for t in TOOL_PLAN if t in log]
     arch.tool_calls = [
         ToolCall(name=t, ok=log[t]["ok"], count=log[t]["count"], note=log[t]["note"])
         for t in order if t in log
