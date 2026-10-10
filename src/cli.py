@@ -37,19 +37,32 @@ if str(ROOT) not in sys.path:
 
 from src import images                                                    # noqa: E402
 from src.archive import build_archive, load_meal_report_sample            # noqa: E402
-from src.textpack import CopyPack, build_copy_brief                            # noqa: E402
+from src.textpack import (                                                    # noqa: E402
+    CopyPack, brief_allowed_numbers, build_copy_brief, build_preheat_brief,
+    build_solve_brief, numeric_leak_warnings, validate_copy_pack, _numbers_of,
+)
 from src.mcp_client import McdMcpClient, McpError                          # noqa: E402
 from src.menu_view import render_menu_html                                  # noqa: E402
-from src.models import CartItem                                             # noqa: E402
+from src.models import CartItem, MenuItem                                   # noqa: E402
+from src.nutrition import load_snapshot                                     # noqa: E402
 from src.order_text import (                                                # noqa: E402
     AmbiguousItem, UnknownItem, parse_items, resolve_cart,
 )
 from src.ordering import (                                                 # noqa: E402
-    OrderingSession, describe, list_addresses, list_delivery_stores, list_stores,
-    load_menu, menu_probe_fields, place as do_place, quote as calc_quote,
-    verify,
+    Menu, OrderingSession, describe, list_addresses, list_delivery_stores,
+    list_stores, load_menu, menu_probe_fields, place as do_place,
+    quote as calc_quote, verify,
 )
 from src.report import render_card_html, render_card_png, render_markdown   # noqa: E402
+from src.preheat import build_preheat                                       # noqa: E402
+from src.preheat_report import (                                            # noqa: E402
+    render_preheat_html, render_preheat_markdown,
+)
+from src.solve_report import render_solve_html, render_solve_markdown       # noqa: E402
+from src.solver import (                                                   # noqa: E402
+    MAX_ADD_HARD, eat_command, make_offline_pricer, make_remote_pricer,
+    parse_coupons, solve,
+)
 
 
 # ---------------------------------------------------------------------- #
@@ -92,18 +105,62 @@ def _use_remote(args) -> bool:
     return not getattr(args, "offline", False)
 
 
-def _copy(args) -> CopyPack | None:
-    """读取 --copy 指定的文案包（WorkBuddy 生成）；未指定则返回 None（走规则模板）。"""
+def _copy(args, allowed: set[str] | None = None) -> CopyPack | None:
+    """读取 --copy 指定的文案包（WorkBuddy 生成）；未指定则返回 None（走规则模板）。
+
+    加载后**立即校验**：模型最容易犯的两个错是删掉 ``{占位符}``（会让数值消失）
+    和凭空编数字。两者都只告警不阻断——因为文案创作本就该自由，
+    但**必须让人看见**，不能静默放行。
+    """
     path = getattr(args, "copy", None)
     if not path:
         return None
     pack = CopyPack.load(path)
-    if pack.active:
-        print(f"[copy] 已加载模型文案：{path}（source={pack.source}）")
-    else:
+    if not pack.active:
         print(f"[copy] 文案包为空，回退规则模板：{path}")
         return None
+
+    # 若同时给了 brief（且文件确实存在），就能连「编数字」一起查
+    if allowed is None:
+        bp = getattr(args, "brief", None)
+        if bp and Path(bp).is_file():
+            allowed = brief_allowed_numbers(bp)
+
+    # 绑定真实数值：之后渲染时，「模型编的数字」会被挡回默认文案
+    if allowed is not None:
+        pack.facts_numbers = allowed
+    _report_copy_warns(path, pack, validate_copy_pack(pack, allowed))
     return pack
+
+
+def _report_copy_warns(path, pack: CopyPack, warns: list[str]) -> None:
+    """把文案包的问题**显式打出来**：静默放行等于让用户以为改写生效了。"""
+    if warns:
+        print(f"[copy] 已加载模型文案：{path}（source={pack.source}）"
+              f"　⚠️ {len(warns)} 处问题，已按安全方式处理：")
+        for w in warns[:12]:
+            print(f"  - {w}")
+        if len(warns) > 12:
+            print(f"  … 另有 {len(warns) - 12} 条")
+    else:
+        print(f"[copy] 已加载模型文案：{path}（source={pack.source}）　✓ 校验通过")
+
+
+def _post_check_numbers(path, pack: CopyPack | None, facts: dict) -> None:
+    """拿到真实数值之后的二次校验：专门查「编数字」。
+
+    solve/preheat 的数字是算完才知道的，所以第一阶段（加载时）只查得到键名和
+    占位符；这里补齐最关键的一项——模型有没有凭空写数字。
+    """
+    if pack is None:
+        return
+    pack.bind_facts(facts)          # 开启渲染级回退：编的数字不会上卡片
+    warns = numeric_leak_warnings(pack, pack.facts_numbers)
+    if warns:
+        print(f"[copy] ⚠️ 文案里出现 {len(warns)} 处与本次事实不符的数字：")
+        for w in warns[:12]:
+            print(f"  - {w}")
+        print("  → 数值一律以接口/规则算出的为准，这些文字已回退默认文案。")
 
 
 def _interactive() -> bool:
@@ -173,9 +230,43 @@ def _write_share(a, copy: CopyPack | None, share: str | None) -> list[str]:
 # ---------------------------------------------------------------------- #
 # 档案类子命令
 # ---------------------------------------------------------------------- #
+def _next_step(*hints: str) -> None:
+    """统一的「下一步」收尾引导。
+
+    四个入口曾经各玩各的：算出最优解没处去、复盘完不指向下一场活动、
+    预热完不知道下一步干嘛。这里用一个统一收尾把它们串成一条时间线：
+
+        预热 preheat → 算价 solve → 下单 eat → 复盘 archive → 回到预热
+    """
+    hints = [h for h in hints if h]
+    if not hints:
+        return
+    print("\n" + "─" * 62)
+    print("下一步")
+    for h in hints:
+        print(f"  {h}")
+    print("─" * 62)
+
+
+def _preheat_hint(a) -> str:
+    """档案 → 预热台的回流量：用档案里已有的活动数据，指出下一场活动。"""
+    act = getattr(a, "activity", None)
+    upcoming = list(getattr(act, "upcoming", None) or [])
+    if upcoming:
+        nxt = upcoming[0]
+        return (f"下一场活动「{nxt.title}」（{nxt.date}）——跑 "
+                "`python -m src.cli preheat` 看你的券等不等得到那天")
+    if list(getattr(act, "current", None) or []):
+        return "今天就有活动在跑：`python -m src.cli preheat` 看备战度"
+    return ""
+
+
 def cmd_archive(args):
     copy = _copy(args)
     a = build_archive(_client(args), use_remote=_use_remote(args))
+    # 档案数字算完，才有 facts 可以比对「模型有没有编数字」
+    _post_check_numbers(getattr(args, "copy", None), copy,
+                        build_copy_brief(a).get("facts") or {})
     md = render_markdown(a, copy)
     print(md)
 
@@ -196,6 +287,9 @@ def cmd_archive(args):
         out = Path(args.out)
         out.write_text(md, encoding="utf-8")
         print(f"档案已写入：{out}")
+
+    # 复盘不是终点：把用户送回「下一场活动」，闭环接上预热台
+    _next_step(_preheat_hint(a))
 
 
 def cmd_orders(args):
@@ -332,20 +426,78 @@ def cmd_demo(args):
     print(md)
 
 
+def _brief_solve(args):
+    """为导出文案素材跑一次**离线**求解（不联网、不产生任何写操作）。
+
+    素材只需要「结构化的事实」，不需要联网验价——离线样例同样能体现数值分布，
+    而且导出素材这件事本身不该消耗接口额度。
+    """
+    menu_items, menu_obj = _load_sample_menu()
+    rules = parse_coupons(_sample_coupon_titles())
+    must: list[str] = []
+    if getattr(args, "items", None):
+        try:
+            rc = resolve_cart(parse_items(args.items), menu_obj)
+            must = [i.product_code for i in rc.cart]
+        except (AmbiguousItem, UnknownItem):
+            must = []
+    if not must:
+        must = [next(iter(menu_items))]
+    sol = solve(must, menu_items, rules, make_offline_pricer(menu_items, rules),
+                budget=float(getattr(args, "budget", 0) or 0.0),
+                max_add=min(int(getattr(args, "add", 3) or 3), MAX_ADD_HARD),
+                top_n=int(getattr(args, "top", 30) or 30),
+                nutrition_lookup=_nutrition_lookup())
+    return sol
+
+
+def _brief_preheat(args):
+    """为导出素材读一次活动与券包（可联网，取决于 --offline）。"""
+    offline = not _use_remote(args)
+    arch = build_archive(_client(args) if not offline else None, use_remote=not offline)
+    raw = arch.raw
+    points = raw.account.available_point if raw.account else 0.0
+    redeem = [float(getattr(p, "points", 0) or 0) for p in (raw.redeem_products or [])]
+    return build_preheat(raw.campaigns, raw.coupons, server_time=raw.server_time or "",
+                         points=points, redeem_points=redeem)
+
+
 def cmd_brief(args):
     """导出「文案素材」，交给 WorkBuddy（宿主 agent）生成 copy_pack.json。
 
     这是「WorkBuddy 在环」文案生成的第一步：CLI 只负责给素材，写文案的是 WorkBuddy 本体。
+    ``--for`` 决定导出哪个场景的素材：archive（档案）/ solve（最优解）/ preheat（预热台）。
     """
-    if _use_remote(args):
-        a = build_archive(_client(args), use_remote=True)
+    kind = (getattr(args, "scene", None) or "archive").lower()
+    if kind == "solve":
+        sol = _brief_solve(args)
+        brief = build_solve_brief(sol, offline=True)
+        default_out = ROOT / "examples" / "copy_brief_solve.json"
+        next_cmd = "python -m src.cli solve --copy copy_pack_solve.json --items 板烧鸡腿堡"
+    elif kind == "preheat":
+        pre = _brief_preheat(args)
+        brief = build_preheat_brief(pre)
+        default_out = ROOT / "examples" / "copy_brief_preheat.json"
+        next_cmd = "python -m src.cli preheat --copy copy_pack_preheat.json"
+    elif kind == "archive":
+        if _use_remote(args):
+            a = build_archive(_client(args), use_remote=True)
+        else:
+            a = build_archive(None, use_remote=False, order_report=load_meal_report_sample())
+        brief = build_copy_brief(a)
+        default_out = ROOT / "examples" / "copy_brief.json"
+        next_cmd = "python -m src.cli archive --copy copy_pack.json --html card.html --png card.png"
     else:
-        a = build_archive(None, use_remote=False, order_report=load_meal_report_sample())
-    brief = build_copy_brief(a)
-    out = Path(args.out) if args.out else (ROOT / "examples" / "copy_brief.json")
+        print(f"× 未知的 --for：{kind}（可选 archive / solve / preheat）")
+        return
+
+    out = Path(args.out) if args.out else default_out
     out.write_text(json.dumps(brief, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"文案素材（brief）已导出：{out}")
-    print("下一步：由 WorkBuddy 读取该文件并生成 copy_pack.json，再用 --copy 渲染档案。")
+    n_text = len(brief.get("text_map") or {})
+    print(f"文案素材（brief · {kind}）已导出：{out}")
+    print(f"  可覆写文字 {n_text} 条　｜　事实字段 {len(brief.get('facts') or {})} 个")
+    print("下一步：由 WorkBuddy 读取该文件并生成 copy_pack.json（**数值必须来自 facts**），再：")
+    print(f"  {next_cmd}")
 
 
 # ---------------------------------------------------------------------- #
@@ -614,6 +766,291 @@ def _confirm_and_place(args, client, session: OrderingSession, q):
     return placed
 
 
+# ---------------------------------------------------------------------- #
+# 麦麦最优解 · McSolve
+# ---------------------------------------------------------------------- #
+def _load_sample_menu() -> tuple[dict[str, MenuItem], Menu]:
+    """离线演示菜单：``data/menu_sample.json``（脱敏，结构与官方 query-meals 一致）。"""
+    data = json.loads((ROOT / "data" / "menu_sample.json").read_text(encoding="utf-8"))
+    items: dict[str, MenuItem] = {}
+    for code, v in (data.get("meals") or {}).items():
+        if not isinstance(v, dict):
+            continue
+        items[str(code)] = MenuItem(
+            code=str(code), name=v.get("name", "") or "",
+            price=float(v.get("currentPrice") or 0),
+            original_price=float(v.get("originalPrice") or 0),
+        )
+    cats: list[tuple[str, list[str]]] = []
+    for cat in data.get("categories") or []:
+        cname = cat.get("name", "商品")
+        codes: list[str] = []
+        for m in cat.get("meals") or []:
+            code = str(m.get("code", ""))
+            if not code:
+                continue
+            codes.append(code)
+            it = items.get(code)
+            if it is not None:
+                it.category = cname
+                it.tags = list(m.get("tags") or [])
+        if codes:
+            cats.append((cname, codes))
+    freq = str((data.get("frequent") or {}).get("code", "") or "")
+    if freq in items:
+        items[freq].tags = sorted(set(items[freq].tags) | {"我的常点"})
+    return items, Menu(categories=cats, frequent_code=freq, items=items)
+
+
+def _sample_coupon_titles() -> list[str]:
+    """离线演示券面文案：取自 archive_sample / scene_sample 的脱敏数据。"""
+    titles: list[str] = []
+    for name in ("data/archive_sample.json", "data/scene_sample.json"):
+        try:
+            d = json.loads((ROOT / name).read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            continue
+        for c in d.get("coupons") or []:
+            t = (c or {}).get("title")
+            if t:
+                titles.append(str(t))
+        for t in d.get("storeCoupons") or []:
+            if t:
+                titles.append(str(t))
+    return titles
+
+
+def _coupon_titles(client, session: OrderingSession) -> list[str]:
+    """真实模式取券：我的券 + 门店券 + 可领券（三层，全部只读）。"""
+    titles: list[str] = []
+
+    def _add(v) -> None:
+        if isinstance(v, str):
+            t = v
+        elif isinstance(v, dict):
+            t = v.get("title") or v.get("couponName") or v.get("name") or ""
+        else:
+            t = ""
+        t = str(t).strip()
+        if t:
+            titles.append(t)
+
+    try:
+        d = client.call_tool("query-my-coupons", {})
+        for c in (d or {}).get("coupons") or []:
+            _add(c)
+    except McpError:
+        pass
+    if session.store_code:
+        try:
+            d = client.call_tool("query-store-coupons", {
+                "storeCode": session.store_code, "orderType": session.order_type,
+                "beType": session.be_type})
+            for c in (d if isinstance(d, list) else (d or {}).get("list") or []):
+                _add(c)
+        except McpError:
+            pass
+    try:
+        d = client.call_tool("available-coupons", {})
+        for c in (d if isinstance(d, list) else (d or {}).get("list") or []):
+            _add(c)
+    except McpError:
+        pass
+    return titles
+
+
+def _nutrition_lookup():
+    """用官方营养库（``list-nutrition-foods`` 的 160 款快照）给最优解算营养。"""
+    try:
+        foods = load_snapshot()
+    except Exception:  # noqa: BLE001
+        return None
+    index: dict[str, object] = {}
+    for f in foods:
+        index.setdefault(re.sub(r"[\s（）()【】\[\]\"“”·•®™\-—]+", "",
+                                f.productName or "").lower(), f)
+
+    def lookup(names: list[str]) -> dict:
+        kcal = protein = fat = sodium = 0.0
+        matched = 0
+        for nm in names:
+            key = re.sub(r"[\s（）()【】\[\]\"“”·•®™\-—]+", "", nm or "").lower()
+            f = index.get(key)
+            if f is None:
+                for k, v in index.items():
+                    if k and (k in key or key in k):
+                        f = v
+                        break
+            if f is not None:
+                matched += 1
+                kcal += f.energyKcal
+                protein += f.protein
+                fat += f.fat
+                sodium += f.sodium
+        return {"kcal": kcal, "protein": protein, "fat": fat, "sodium": sodium,
+                "matched": matched, "total": len(names)}
+
+    return lookup
+
+
+def cmd_preheat(args):
+    """麦麦预热台 · McPreheat。
+
+    把官方营销活动日历和**券的到期时间**交叉起来：倒计时告诉你还有几天，
+    冲突预警告诉你哪些券**等不到那天**。全程只读。
+    """
+    offline = not _use_remote(args)
+    print("正在读取活动日历与券包（campaign-calendar / now-time-info / query-my-coupons）…")
+    arch = build_archive(_client(args), use_remote=not offline)
+    raw = arch.raw
+
+    points = raw.account.available_point if raw.account else 0.0
+    # RedeemableProduct 的积分字段是 points（字符串）
+    redeem = [float(getattr(p, "points", 0) or 0) for p in (raw.redeem_products or [])]
+
+    copy = _copy(args)
+    pre = build_preheat(raw.campaigns, raw.coupons, server_time=raw.server_time or "",
+                        points=points, redeem_points=redeem, copy=copy)
+    # 倒计时天数/券到期天数是预热算出来的，此时才有 facts 可比对「编数字」
+    _post_check_numbers(getattr(args, "copy", None), copy,
+                        build_preheat_brief(pre).get("facts") or {})
+
+    print()
+    print(render_preheat_markdown(pre, copy))
+
+    out = Path(args.html) if args.html else ROOT / "examples" / "preheat_report.html"
+    out.write_text(render_preheat_html(pre, copy), encoding="utf-8")
+    print(f"\n预热卡已生成：{out}")
+    if offline:
+        print("（演示模式：脱敏样例数据；接上 Token 去掉 --offline 即为你的真实券包）")
+
+    # 预热完不该停在原地：把用户送到「怎么点最划算」
+    lead = (f"等「{pre.target.title}」开跑前，先算好那一单怎么点最划算："
+            if pre.target else "算算这一单怎么点最划算：")
+    _next_step(lead, "python -m src.cli solve --items <你想吃的东西>")
+
+
+def cmd_solve(args):
+    """麦麦最优解 · McSolve。
+
+    把官方 ``calculate-price`` 当「价格预言机」反复调用：本地穷举候选 → 剪枝排序 →
+    对 Top N 个组合逐一**官方验价** → 挑出官方认证的最低价。
+
+    全程只读：不领券、不抽奖、不下单，验价不产生任何订单。
+    """
+    offline = not _use_remote(args)
+    store_name = "（脱敏）示例门店"
+
+    # ---- 1) 菜单 + 券 ----
+    if offline:
+        menu_items, menu_obj = _load_sample_menu()
+        coupon_titles = _sample_coupon_titles()
+    else:
+        client = _client(args)
+        session = OrderingSession(order_type=args.order_type, be_type=args.be_type)
+        if not _select_store(client, args, session):
+            return
+        store_name = session.store_name
+        print("正在读取门店菜单（query-meals）…")
+        try:
+            menu_obj = load_menu(client, session)
+        except McpError as exc:
+            print(f"× 读取菜单失败：{exc}")
+            return
+        menu_items = menu_obj.items
+        if not menu_items:
+            print("× 菜单为空，无法求解。")
+            return
+        print("正在读取券包（query-my-coupons / query-store-coupons / available-coupons）…")
+        coupon_titles = _coupon_titles(client, session)
+
+    rules = parse_coupons(coupon_titles)
+    usable = sum(1 for r in rules if r.kind != "unknown")
+    print(f"菜单 {len(menu_items)} 款 ｜ 券 {len(coupon_titles)} 张（可解析规则 {usable} 条）")
+
+    # ---- 2) 必选：想吃的那几样 ----
+    must: list[str] = []
+    if args.items:
+        try:
+            rc = resolve_cart(parse_items(args.items), menu_obj)
+        except (AmbiguousItem, UnknownItem) as exc:
+            print(f"× 没能解析必选商品：{exc}")
+            return
+        for note in rc.notes:
+            print(f"  ↳ {note}")
+        must = [i.product_code for i in rc.cart]
+    if not must:
+        print("× 请至少指定一样想吃的东西，例如：--items 板烧鸡腿堡")
+        return
+    print(f"必选：{'、'.join(menu_items[c].name for c in must if c in menu_items)}")
+
+    # ---- 3) 验价器（离线为本地估算，真实为官方接口）----
+    add = min(args.add, MAX_ADD_HARD)
+    if args.add > MAX_ADD_HARD:
+        print(f"  ↳ --add {args.add} 超过上限，已按 {MAX_ADD_HARD} 处理"
+              f"（组合数随件数爆炸，再多也没有更好的解）")
+    workers = 1 if offline else max(1, args.workers)
+
+    best: dict[str, float | None] = {"v": None}
+    total_calls = args.top
+
+    def on_progress(done: int, paid: float | None) -> None:
+        if paid is None:
+            return
+        if best["v"] is None or paid < best["v"]:
+            best["v"] = paid
+            print(f"  [{done}/{total_calls}] 验价 → 新的最优 ¥{paid:.2f}")
+        elif done % 10 == 0:
+            print(f"  [{done}/{total_calls}] 验价中…")
+
+    if offline:
+        pricer = make_offline_pricer(menu_items, rules)
+    else:
+        pricer = make_remote_pricer(client, session, menu_obj)
+
+    # ---- 4) 求解 ----
+    print(f"\n正在搜索最优组合（最多追加 {add} 件，预算 "
+          f"{('¥' + format(args.budget, '.2f')) if args.budget else '不限'}，"
+          f"验价并发 {workers}）…")
+    sol = solve(must, menu_items, rules, pricer, budget=args.budget or 0.0,
+                max_add=add, top_n=args.top, nutrition_lookup=_nutrition_lookup(),
+                workers=workers, on_progress=on_progress)
+    if not sol.items:
+        if sol.fail_count and sol.fail_count == sol.verify_count:
+            print("× 官方验价全部失败（网络或接口异常），不是「没有解」。"
+                  "可稍后重试，或加 --offline 先看演示效果。")
+        else:
+            print("× 没有求出可行组合：试试提高 --budget 或减小 --add。")
+        return
+
+    # ---- 5) 产物 ----
+    # 数值算完才校验「编数字」：先用真实 facts 过一遍，再渲染
+    copy = _copy(args, allowed=_numbers_of(
+        build_solve_brief(sol, store_name=store_name, offline=offline).get("facts") or {}))
+    print()
+    print(render_solve_markdown(sol, store_name=store_name, offline=offline, copy=copy))
+
+    out = Path(args.html) if args.html else ROOT / "examples" / "solve_report.html"
+    out.write_text(render_solve_html(sol, store_name=store_name, offline=offline, copy=copy),
+                   encoding="utf-8")
+    print(f"\n战报卡片已生成：{out}")
+    if offline:
+        print("（演示模式：价格为脱敏样例的本地估算；接上 Token 去掉 --offline 即为官方实时验价）")
+
+    # ---- 6) 把最优解接进点餐闭环 ----
+    # 算完最优解却没处去，是这个玩法最大的断点：用户得手抄商品名再敲 eat。
+    # 这里直接给一条可复制的命令。
+    if offline:
+        _next_step("演示数据不能真下单。接上 Token 去掉 --offline，"
+                   "这里会给出一条可直接复制的下单命令。")
+    else:
+        _next_step(
+            "照这个最优解下单（默认 dry-run，不会真扣钱）：",
+            eat_command(sol, session.store_code),
+            "确认要真下单时再追加 --yes；下单后会自动生成分享档案。",
+        )
+
+
 def cmd_eat_list(args):
     """快速查看可选门店（点餐前的便利子命令）。"""
     if not _use_remote(args):
@@ -727,7 +1164,15 @@ def build_parser() -> argparse.ArgumentParser:
     common(sp); sp.set_defaults(func=cmd_demo)
 
     sp = sub.add_parser("brief", help="导出文案素材（交给 WorkBuddy 写文案）")
-    sp.add_argument("--out", help="brief 输出路径（默认 examples/copy_brief.json）")
+    sp.add_argument("--for", dest="scene", choices=["archive", "solve", "preheat"],
+                    default="archive",
+                    help="导出哪个场景的素材：archive 档案 / solve 最优解 / preheat 预热台")
+    sp.add_argument("--out", help="brief 输出路径（默认按场景分别命名）")
+    sp.add_argument("--items", nargs="+", metavar="CODE|名称",
+                    help="仅 --for solve：指定必选商品（缺省取菜单第一项）")
+    sp.add_argument("--add", type=int, default=3, help="仅 --for solve：最多追加几件")
+    sp.add_argument("--budget", type=float, default=0.0, help="仅 --for solve：实付预算上限")
+    sp.add_argument("--top", type=int, default=30, help="仅 --for solve：验价候选数")
     common(sp); sp.set_defaults(func=cmd_brief)
 
     # —— 点餐闭环 ——
@@ -767,6 +1212,36 @@ def build_parser() -> argparse.ArgumentParser:
                     help="分享档案输出：.html / .png / .md，或前缀（同时出 HTML+PNG）")
     sp.add_argument("--copy", help="注入 WorkBuddy 生成的文案包 JSON")
     common(sp); sp.set_defaults(func=cmd_eat)
+
+    # —— 麦麦预热台 ——
+    sp = sub.add_parser("preheat",
+                        help="麦麦预热台：活动倒计时 + 券到期冲突预警 + 备战度（全程只读）")
+    sp.add_argument("--html", help="预热卡输出路径（默认 examples/preheat_report.html）")
+    sp.add_argument("--copy", help="注入 WorkBuddy 生成的文案包 JSON（覆盖除数值外的全部文字）")
+    sp.add_argument("--brief", help="同时给出 brief 文件，可一并校验文案里有没有编造的数字")
+    common(sp); sp.set_defaults(func=cmd_preheat)
+
+    # —— 麦麦最优解 ——
+    sp = sub.add_parser("solve", help="麦麦最优解：穷举 + 官方验价，算出这一单怎么点最划算（全程只读）")
+    sp.add_argument("--items", nargs="+", metavar="CODE|名称", required=True,
+                    help="必选：你想吃的东西，编码或名称均可，如 --items 板烧鸡腿堡 可乐中杯")
+    sp.add_argument("--budget", type=float, default=0.0, help="实付预算上限（元），0 表示不限")
+    sp.add_argument("--add", type=int, default=3, help="最多追加几件凑单商品（默认 3）")
+    sp.add_argument("--top", type=int, default=30,
+                    help="送去官方验价的候选数（默认 30，接口调用量 = 该值）")
+    sp.add_argument("--workers", type=int, default=4,
+                    help="验价并发度（默认 4；30 次串行 HTTP 是唯一耗时点，并发可大幅提速）")
+    sp.add_argument("--store", help="直接指定门店 code（跳过选店）")
+    sp.add_argument("--search", type=int, default=1, help="1=收藏餐厅（默认）2=按位置搜索")
+    sp.add_argument("--city", default="", help="searchType=2 时的城市名")
+    sp.add_argument("--pick", type=int, help="非交互式：直接选第 N 家门店（1 起）")
+    sp.add_argument("--order-type", type=int, default=1, help="1 到店 / 2 外送")
+    sp.add_argument("--be-type", type=int, default=1, help="1 到店自取 / 2 麦乐送 / 5 得来速 / 6 团餐")
+    sp.add_argument("--address", help="外送地址 id（be-type=2 时）")
+    sp.add_argument("--html", help="战报卡片输出路径（默认 examples/solve_report.html）")
+    sp.add_argument("--copy", help="注入 WorkBuddy 生成的文案包 JSON（覆盖除数值外的全部文字）")
+    sp.add_argument("--brief", help="同时给出 brief 文件，可一并校验文案里有没有编造的数字")
+    common(sp); sp.set_defaults(func=cmd_solve)
 
     return p
 

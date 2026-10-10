@@ -1,0 +1,149 @@
+{
+  "task": "为「麦麦预热台 McPreheat」生成全部展示文字（WorkBuddy 在环，无需外部 Key）",
+  "scene": "preheat",
+  "facts": {
+    "today": "2026-10-09",
+    "server_time": "2026-10-09 16:48:16",
+    "target_title": "秋日限定新品上新",
+    "days_left": 7,
+    "missing": [
+      {
+        "title": "满30减5元券",
+        "days": 3,
+        "until": "2026.10.12 23:59"
+      }
+    ],
+    "surviving": [
+      {
+        "title": "免费香芋派",
+        "days": 7,
+        "on_edge": false
+      },
+      {
+        "title": "免费中薯条",
+        "days": 53,
+        "on_edge": false
+      }
+    ],
+    "urgent": [
+      {
+        "title": "免费香芋派",
+        "days": 7
+      }
+    ],
+    "running": [
+      "超值9.9元早餐两件套陪你开工啦",
+      "麦麦会员日 积分多倍"
+    ],
+    "upcoming": [
+      {
+        "title": "秋日限定新品上新",
+        "date": "2026-10-16"
+      },
+      {
+        "title": "周末欢乐桶限时回归",
+        "date": "2026-10-25"
+      }
+    ],
+    "unparsed_count": 0,
+    "score": 75,
+    "grade": "A",
+    "points": 1320.1,
+    "redeemable": 4,
+    "coupon_count": 3
+  },
+  "rule_drafts": {
+    "headline": "距「秋日限定新品上新」还有 7 天，但你有 1 张券等不到那天",
+    "tips": [
+      "「满30减5元券」还剩 3 天到期，撑不到「秋日限定新品上新」——先用掉",
+      "「免费香芋派」7 天内到期，别压箱底",
+      "积分 1320.1 够兑 4 件商品，活动当天能当现金使",
+      "今天本来就有活动在进行：超值9.9元早餐两件套陪你开工啦、麦麦会员日 积分多倍"
+    ],
+    "grade_word": "大体就绪，还能补"
+  },
+  "text_map": {
+    "ph.md_title": "麦麦预热台 · McPreheat",
+    "ph.kicker": "麦麦预热台",
+    "ph.sub": "活动日历 × 你的券包，算出等不等得到",
+    "ph.sec_running": "今天正在进行",
+    "ph.sec_conflict": "等不到那天的券",
+    "ph.sec_surviving": "能撑到活动当天",
+    "ph.sec_upcoming": "接下来还有",
+    "ph.sec_urgent": "即将到期（{n} 天内）",
+    "ph.sec_score": "备战度",
+    "ph.sec_tips": "现在该做什么",
+    "ph.sec_coupons": "券包全览",
+    "ph.tbl_coupon": "券",
+    "ph.tbl_expire": "到期",
+    "ph.tbl_left": "距今",
+    "ph.lbl_unit_day": "天",
+    "ph.lbl_expire_in": "{n} 天后",
+    "ph.lbl_expired": "已过期",
+    "ph.lbl_dash": "—",
+    "ph.sec_countdown": "倒计时",
+    "ph.sec_ammo": "弹药",
+    "ph.sec_later": "后面还有",
+    "ph.lbl_target": "目标活动",
+    "ph.lbl_date": "日期",
+    "ph.lbl_left": "还有",
+    "ph.lbl_desc": "说明",
+    "ph.lbl_today": "今天",
+    "ph.no_target": "当前没有可预热的活动",
+    "ph.no_target_sub": "先把券包看住",
+    "ph.conflict_warn": "这些券会在活动开始前作废——先用掉，别留给一场赶不上的活动。",
+    "ph.ammo_line": "可用积分 **{points}**{tip}",
+    "ph.ammo_redeem": "够兑换 **{n}** 件商品",
+    "ph.ammo_floor": "，最低门槛 {floor} 分",
+    "ph.ammo_html": "可用积分 <b>{points}</b>{tip}",
+    "ph.ammo_redeem_html": "，够兑 <b>{n}</b> 件",
+    "ph.unparsed_note_full": "⚠️ 有 **{n}** 条活动的日期格式未能解析，未计入倒计时。活动本身没丢，完整列表见 `campaign` 命令。",
+    "ph.unparsed_note_html": "未计入倒计时。活动本身没丢，完整列表见 campaign 命令。",
+    "ph.foot_md": "口径：活动来自官方 `campaign-calendar`，券到期来自 `query-my-coupons`，时间基准 `now-time-info`。全程只读，不领券、不抽奖、不下单。",
+    "ph.lbl_expire_at": "到期 {text}",
+    "ph.lbl_press": "压线过关",
+    "ph.lbl_unknown_expire": "到期时间未知",
+    "ph.lbl_points": "可用积分 {points:g}　·　够兑 {n} 件",
+    "ph.lbl_score": "{score}/100",
+    "ph.lbl_data_time": "数据时间：{t}",
+    "ph.unparsed_note": "⚠️ 有 {n} 条活动的日期格式未能解析，未参与倒计时计算。",
+    "ph.hook_conflict": "距「{title}」还有 {d} 天，但你有 {n} 张券等不到那天",
+    "ph.hook_ready": "距「{title}」还有 {d} 天，券已就位",
+    "ph.hook_plain": "距「{title}」还有 {d} 天",
+    "ph.hook_today": "「{title}」就是今天，冲",
+    "ph.hook_running": "「{title}」正在跑，暂时没有下一场可预热",
+    "ph.hook_none": "当前没有可预热的活动，先看住你手里的券",
+    "ph.hook_unparsed": "拿到 {n} 条活动，但日期格式未能解析，暂时算不出倒计时",
+    "ph.grade_S": "弹药充足，稳了",
+    "ph.grade_A": "大体就绪，还能补",
+    "ph.grade_B": "有缺口，先看冲突",
+    "ph.grade_C": "裸奔进场，建议先清券",
+    "ph.tip_expired": "「{title}」已过期，别再惦记它了",
+    "ph.tip_missing": "「{title}」还剩 {n} 天到期，撑不到「{target}」——先用掉",
+    "ph.tip_urgent": "「{title}」{n} 天内到期，别压箱底",
+    "ph.tip_no_coupon": "活动当天你一张券都不剩，等于原价进场",
+    "ph.tip_points": "积分 {points:g} 够兑 {n} 件商品，活动当天能当现金使",
+    "ph.tip_running": "今天本来就有活动在进行：{titles}",
+    "ph.tip_healthy": "券包状态健康，等活动开跑直接上",
+    "ph.tip_no_data": "暂时没有活动数据可预热，先看看你手里的券",
+    "ph.cta": "我也想看看我的 → {repo}",
+    "ph.cta_md": "也想看看你的？ {repo}",
+    "ph.foot_tools": "数据来自官方 MCP campaign-calendar / query-my-coupons / now-time-info",
+    "ph.foot_disclaimer": "倒计时基于官方活动日历与券面到期时间推算，以麦当劳官方渠道为准"
+  },
+  "instructions": "你是「麦门文案师」，为一张「麦麦预热台」倒计时备战卡写**全部展示文字**。严格基于 facts 里的真实数字，**不得编造未出现的数字或事实**。这张卡的钩子是「活动日历 × 券到期」的交叉冲突：**有些券等不到活动那天**。风格：有紧迫感、口语、可截图；但**不要渲染焦虑或鼓励过度消费**——定位是「看见并提醒」，不是「催你赶紧吃」。**preheat.headline 是重点**：一句话把倒计时和冲突同时说出来（≤24 字），数字必须来自 facts（days_left / missing 条数）。有冲突时优先用冲突做钩子。**preheat.tips 可整段重写**（2-5 条），每条都要**落到具体某张券或某个事实上**，不要写「关注官方活动」这种通用鸡汤。**labels 覆盖除数值外的所有文字**（key 见 text_map），**改写 labels 时必须保留 {占位符}**——删掉会导致数字丢失（我们会校验）。ph.grade_S / ph.grade_A / ph.grade_B / ph.grade_C 是备战度评级词，可以改得更有趣。产出严格 JSON，字段见 schema。",
+  "schema": {
+    "source": "workbuddy",
+    "preheat": {
+      "headline": "倒计时钩子句（≤24 字，数字须来自 facts）",
+      "grade_word": "备战度评级词（≤10 字）。两种写法：① 字符串 → 所有评级同一句；② 对象 → {\"S\": …, \"A\": …, \"B\": …, \"C\": …} 按备战度各写一句（推荐；没写的档位回退默认）",
+      "tips": [
+        "2-5 条行动建议，每条落到具体券/具体事实上"
+      ]
+    },
+    "labels": {
+      "<text_map 里的 ph.* key>": "改写后的文字；必须保留 {占位符}"
+    }
+  },
+  "repo_url": ""
+}

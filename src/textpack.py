@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -226,6 +227,170 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
                                 "仅供个人复盘参考，不构成医疗或营养建议；"
                                 "餐品与价格以麦当劳官方渠道为准。",
                       "desc": "Markdown 免责声明（长）"},
+
+    # ================================================================== #
+    # 麦麦最优解 · McSolve（sv.*）
+    # ================================================================== #
+    "sv.md_title": {"default": "麦麦最优解 · McSolve", "desc": "Markdown 主标题"},
+    "sv.kicker": {"default": "麦麦最优解", "desc": "卡片顶部小标"},
+    "sv.sub": {"default": "官方接口验过价的最低组合", "desc": "卡片副标题"},
+    "sv.no_solution": {"default": "本次没有求出可行组合，试试放宽预算或减少必选商品。",
+                       "desc": "无解提示（MD）"},
+    "sv.no_solution_html": {"default": "没有求出可行组合", "desc": "无解提示（HTML）"},
+    "sv.grade_line": {"default": "评级 **{grade}** —— {word}", "desc": "评级行（MD）"},
+    "sv.store_line": {"default": "门店：{store}", "desc": "门店行（MD）"},
+    "sv.sec_solution": {"default": "最优解", "desc": "区块：最优解"},
+    "sv.sec_items": {"default": "这一单点什么", "desc": "区块：本单餐品"},
+    "sv.sec_vs": {"default": "你的直觉点法 vs 算法最优解", "desc": "区块：人机对比"},
+    "sv.sec_process": {"default": "求解过程", "desc": "区块：求解过程"},
+    "sv.sec_rules": {"default": "参考的券规则", "desc": "区块：券规则"},
+    "sv.sec_nutrition": {"default": "这一单的营养", "desc": "区块：营养"},
+    "sv.lbl_original": {"default": "原价", "desc": "指标：原价"},
+    "sv.lbl_paid": {"default": "实付", "desc": "指标：实付"},
+    "sv.lbl_discount": {"default": "官方优惠", "desc": "指标：官方优惠"},
+    "sv.discount_note": {"default": "¥{discount}（折扣力度 {rate}%）", "desc": "折扣力度说明"},
+    "sv.lbl_count": {"default": "件数", "desc": "表头：件数"},
+    "sv.lbl_pay": {"default": "实付", "desc": "表头：实付"},
+    "sv.lbl_avg": {"default": "均价", "desc": "表头：均价"},
+    "sv.lbl_baseline": {"default": "直觉点法", "desc": "对比：直觉点法"},
+    "sv.lbl_best": {"default": "算法最优解", "desc": "对比：算法最优解"},
+    "sv.vs_baseline_col": {"default": "直觉点法 · {n} 件", "desc": "对比列头：直觉点法"},
+    "sv.vs_best_col": {"default": "算法最优解 · {n} 件", "desc": "对比列头：最优解"},
+    "sv.vs_avg_line": {"default": "均价 ¥{avg}", "desc": "对比列：均价"},
+    "sv.vs_save": {"default": "同样的东西，白省 ¥{saved}", "desc": "结论：白省"},
+    "sv.vs_more": {"default": "多花 ¥{extra}，多得 {n} 件，均价从 ¥{a} 降到 ¥{b}"
+                             "（降 {drop}%）",
+                   "desc": "结论：多花多得"},
+    "sv.vs_more_html": {"default": "多花 ¥{extra}，多得 {n} 件<br>单件均价直降 {drop}%",
+                        "desc": "结论：多花多得（HTML）"},
+    "sv.vs_note": {"default": "口径：上面的「折扣力度」是相对原价；这里的多花 ¥{extra} "
+                              "是相对「只点必选」的实付。两者量纲不同——多掏一点钱，换回更多件。",
+                   "desc": "量纲口径说明（MD）"},
+    "sv.vs_note_html": {"default": "口径：上方「折扣力度」是相对原价；这里的多花 ¥{extra} "
+                                  "是相对「只点必选」的实付。量纲不同——多掏一点，换回更多件。",
+                        "desc": "量纲口径说明（HTML）"},
+    "sv.enum_line": {"default": "本地枚举候选：**{n}** 种", "desc": "求解：枚举数"},
+    "sv.valid_line": {"default": "其中通过预算：**{n}** 种", "desc": "求解：通过预算"},
+    "sv.verify_line": {"default": "官方 `calculate-price` 验价：**{n}** 次（成功 {ok}）",
+                       "desc": "求解：验价次数"},
+    "sv.fail_line": {"default": "⚠️ 其中 **{n}** 次验价失败（网络或接口异常），已跳过——"
+                               "**最优解是在成功验价的组合里挑出来的**",
+                     "desc": "求解：验价失败披露"},
+    "sv.final_note": {"default": "最终价格以官方验价为准，本地估算只用于排序",
+                      "desc": "求解：最终口径"},
+    "sv.fail_note_html": {"default": "有 {n} 次官方验价失败已跳过，"
+                                    "最优解是在成功验价的组合中选出的。",
+                          "desc": "求解：验价失败披露（HTML）"},
+    "sv.rules_unknown": {"default": "另有 {n} 张券无法自动解析", "desc": "券：无法解析"},
+    "sv.nut_kcal": {"default": "热量 **{kcal} kcal**", "desc": "营养：热量"},
+    "sv.nut_line": {"default": "蛋白 {p} g ｜ 脂肪 {f} g ｜ 钠 {na} mg", "desc": "营养：三项"},
+    "sv.nut_cov": {"default": "营养映射覆盖 {m}/{t} 件", "desc": "营养：覆盖率"},
+    "sv.lbl_kcal_unit": {"default": "千卡", "desc": "营养卡：千卡"},
+    "sv.lbl_protein": {"default": "蛋白", "desc": "营养卡：蛋白"},
+    "sv.lbl_fat": {"default": "脂肪", "desc": "营养卡：脂肪"},
+    "sv.lbl_sodium": {"default": "钠", "desc": "营养卡：钠"},
+    "sv.stat_enum": {"default": "本地枚举<br>候选组合", "desc": "统计：枚举"},
+    "sv.stat_verify": {"default": "官方验价<br>calculate-price", "desc": "统计：验价"},
+    "sv.stat_rate": {"default": "折扣力度", "desc": "统计：折扣力度"},
+    "sv.demo_warn": {"default": "演示模式：价格为脱敏样例数据的本地估算，非官方实时报价。",
+                     "desc": "演示模式警告"},
+    "sv.foot_price": {"default": "价格来自麦当劳官方 MCP `calculate-price`，"
+                                "全程只读、不产生订单", "desc": "页脚：价格来源"},
+    "sv.foot_price_html": {"default": "价格来自麦当劳官方 MCP <code>calculate-price</code>，"
+                                     "全程只读、不产生订单", "desc": "页脚：价格来源（HTML）"},
+    "sv.foot_nutrition": {"default": "营养值仅供复盘参考，不构成营养建议", "desc": "页脚：营养"},
+    "sv.cta": {"default": "我也想算算我的 → {repo}", "desc": "页脚号召语（HTML）"},
+    "sv.cta_md": {"default": "也想算算你的？ {repo}", "desc": "页脚号召语（MD）"},
+
+    # ================================================================== #
+    # 麦麦预热台 · McPreheat（ph.*）
+    # ================================================================== #
+    "ph.md_title": {"default": "麦麦预热台 · McPreheat", "desc": "Markdown 主标题"},
+    "ph.kicker": {"default": "麦麦预热台", "desc": "卡片顶部小标"},
+    "ph.sub": {"default": "活动日历 × 你的券包，算出等不等得到", "desc": "卡片副标题"},
+    "ph.sec_running": {"default": "今天正在进行", "desc": "区块：今日进行中"},
+    "ph.sec_conflict": {"default": "等不到那天的券", "desc": "区块：冲突券"},
+    "ph.sec_surviving": {"default": "能撑到活动当天", "desc": "区块：存活券"},
+    "ph.sec_upcoming": {"default": "接下来还有", "desc": "区块：后续活动"},
+    "ph.sec_urgent": {"default": "即将到期（{n} 天内）", "desc": "区块：临期券（含窗口天数）"},
+    "ph.sec_score": {"default": "备战度", "desc": "区块：备战度"},
+    "ph.sec_tips": {"default": "现在该做什么", "desc": "区块：行动建议"},
+    "ph.sec_coupons": {"default": "券包全览", "desc": "区块：券包全览"},
+    "ph.tbl_coupon": {"default": "券", "desc": "表头：券"},
+    "ph.tbl_expire": {"default": "到期", "desc": "表头：到期"},
+    "ph.tbl_left": {"default": "距今", "desc": "表头：距今"},
+    "ph.lbl_unit_day": {"default": "天", "desc": "倒计时单位"},
+    "ph.lbl_expire_in": {"default": "{n} 天后", "desc": "券：到期倒计时"},
+    "ph.lbl_expired": {"default": "已过期", "desc": "券：已过期"},
+    "ph.lbl_dash": {"default": "—", "desc": "占位：无数据"},
+    "ph.sec_countdown": {"default": "倒计时", "desc": "区块：倒计时"},
+    "ph.sec_ammo": {"default": "弹药", "desc": "区块：积分弹药"},
+    "ph.sec_later": {"default": "后面还有", "desc": "区块：后续活动"},
+    "ph.lbl_target": {"default": "目标活动", "desc": "倒计时：目标活动"},
+    "ph.lbl_date": {"default": "日期", "desc": "倒计时：日期"},
+    "ph.lbl_left": {"default": "还有", "desc": "倒计时：还剩"},
+    "ph.lbl_desc": {"default": "说明", "desc": "倒计时：活动说明"},
+    "ph.lbl_today": {"default": "今天", "desc": "倒计时：就是今天"},
+    "ph.no_target": {"default": "当前没有可预热的活动", "desc": "无预热对象（HTML）"},
+    "ph.no_target_sub": {"default": "先把券包看住", "desc": "无预热对象副标题"},
+    "ph.conflict_warn": {"default": "这些券会在活动开始前作废——先用掉，"
+                                    "别留给一场赶不上的活动。",
+                         "desc": "冲突券区块警示句"},
+    "ph.ammo_line": {"default": "可用积分 **{points}**{tip}", "desc": "积分行（MD）"},
+    "ph.ammo_redeem": {"default": "够兑换 **{n}** 件商品", "desc": "积分可兑（MD）"},
+    "ph.ammo_floor": {"default": "，最低门槛 {floor} 分", "desc": "积分门槛后缀"},
+    "ph.ammo_html": {"default": "可用积分 <b>{points}</b>{tip}", "desc": "积分行（HTML）"},
+    "ph.ammo_redeem_html": {"default": "，够兑 <b>{n}</b> 件", "desc": "积分可兑（HTML）"},
+    "ph.unparsed_note_full": {"default": "⚠️ 有 **{n}** 条活动的日期格式未能解析，未计入倒计时。"
+                                         "活动本身没丢，完整列表见 `campaign` 命令。",
+                              "desc": "日期解析失败披露（MD，完整）"},
+    "ph.unparsed_note_html": {"default": "未计入倒计时。活动本身没丢，完整列表见 campaign 命令。",
+                              "desc": "日期解析失败披露（HTML 后半句）"},
+    "ph.foot_md": {"default": "口径：活动来自官方 `campaign-calendar`，券到期来自 "
+                              "`query-my-coupons`，时间基准 `now-time-info`。"
+                              "全程只读，不领券、不抽奖、不下单。",
+                   "desc": "页脚口径（MD）"},
+    "ph.lbl_expire_at": {"default": "到期 {text}", "desc": "券：到期时间"},
+    "ph.lbl_press": {"default": "压线过关", "desc": "券：压线标记"},
+    "ph.lbl_unknown_expire": {"default": "到期时间未知", "desc": "券：到期未知"},
+    "ph.lbl_points": {"default": "可用积分 {points:g}　·　够兑 {n} 件", "desc": "积分行"},
+    "ph.lbl_score": {"default": "{score}/100", "desc": "备战度分数"},
+    "ph.lbl_data_time": {"default": "数据时间：{t}", "desc": "数据时间行（MD）"},
+    "ph.unparsed_note": {"default": "⚠️ 有 {n} 条活动的日期格式未能解析，未参与倒计时计算。",
+                         "desc": "日期解析失败披露"},
+    # —— 钩子句式（**最能体现模型能力**：同一份事实，说法可以完全不同）——
+    "ph.hook_conflict": {"default": "距「{title}」还有 {d} 天，但你有 {n} 张券等不到那天",
+                         "desc": "钩子：有冲突"},
+    "ph.hook_ready": {"default": "距「{title}」还有 {d} 天，券已就位", "desc": "钩子：临期已就位"},
+    "ph.hook_plain": {"default": "距「{title}」还有 {d} 天", "desc": "钩子：常规倒计时"},
+    "ph.hook_today": {"default": "「{title}」就是今天，冲", "desc": "钩子：就是今天"},
+    "ph.hook_running": {"default": "「{title}」正在跑，暂时没有下一场可预热",
+                        "desc": "钩子：有进行中无下一场"},
+    "ph.hook_none": {"default": "当前没有可预热的活动，先看住你手里的券", "desc": "钩子：无活动"},
+    "ph.hook_unparsed": {"default": "拿到 {n} 条活动，但日期格式未能解析，暂时算不出倒计时",
+                         "desc": "钩子：日期读不懂"},
+    # —— 评级词（模型可改写成更有梗的说法）——
+    "ph.grade_S": {"default": "弹药充足，稳了", "desc": "评级词：S"},
+    "ph.grade_A": {"default": "大体就绪，还能补", "desc": "评级词：A"},
+    "ph.grade_B": {"default": "有缺口，先看冲突", "desc": "评级词：B"},
+    "ph.grade_C": {"default": "裸奔进场，建议先清券", "desc": "评级词：C"},
+    # —— 行动建议句式（每条都基于算出来的事实，占位符由程序填）——
+    "ph.tip_expired": {"default": "「{title}」已过期，别再惦记它了", "desc": "建议：已过期"},
+    "ph.tip_missing": {"default": "「{title}」还剩 {n} 天到期，撑不到「{target}」——先用掉",
+                       "desc": "建议：等不到活动"},
+    "ph.tip_urgent": {"default": "「{title}」{n} 天内到期，别压箱底", "desc": "建议：临期"},
+    "ph.tip_no_coupon": {"default": "活动当天你一张券都不剩，等于原价进场", "desc": "建议：当天无券"},
+    "ph.tip_points": {"default": "积分 {points:g} 够兑 {n} 件商品，活动当天能当现金使",
+                      "desc": "建议：积分可兑"},
+    "ph.tip_running": {"default": "今天本来就有活动在进行：{titles}", "desc": "建议：今日有活动"},
+    "ph.tip_healthy": {"default": "券包状态健康，等活动开跑直接上", "desc": "建议：状态健康"},
+    "ph.tip_no_data": {"default": "暂时没有活动数据可预热，先看看你手里的券", "desc": "建议：无数据"},
+    "ph.cta": {"default": "我也想看看我的 → {repo}", "desc": "页脚号召语（HTML）"},
+    "ph.cta_md": {"default": "也想看看你的？ {repo}", "desc": "页脚号召语（MD）"},
+    "ph.foot_tools": {"default": "数据来自官方 MCP campaign-calendar / query-my-coupons / "
+                                "now-time-info", "desc": "页脚：数据来源"},
+    "ph.foot_disclaimer": {"default": "倒计时基于官方活动日历与券面到期时间推算，"
+                                     "以麦当劳官方渠道为准", "desc": "页脚：免责"},
 }
 
 
@@ -246,14 +411,47 @@ class TextResolver:
         if self.copy is not None:
             ov = self.copy.labels.get(key)
             if ov:
-                t = ov
+                # 两道闸，任一不过就用默认文案：
+                # 1) 少了占位符 → str.format 会静默忽略多余参数，数值凭空消失；
+                # 2) 夹带了 facts 里没有的数字 → 那是模型编的，不能上卡片。
+                # validate_copy_pack 负责说清楚原因，这里负责兜住结果。
+                allowed = getattr(self.copy, "facts_numbers", None)
+                ok = not missing_placeholders(key, ov) and not _leaked_numbers(ov, default, allowed)
+                t = ov if ok else default
         try:
             return t.format(**kw)
-        except Exception:  # 覆写模板占位符缺失 → 回退默认，保证数值不丢
+        except Exception:  # 覆写模板占位符异常 → 回退默认，保证数值不丢
             try:
                 return default.format(**kw)
             except Exception:
                 return default
+
+
+def _str_map(d) -> dict:
+    """把 JSON 里的场景子块规整成 ``str -> str | list[str] | dict[str, str]``。
+
+    ``grade_word`` 允许两种写法：整词字符串（所有评级用同一句）或
+    ``{评级: 词}`` 映射（S/A/B/C 各写一句，没覆盖到的回退默认）。
+    """
+    if not isinstance(d, dict):
+        return {}
+    out: dict = {}
+    for k, v in d.items():
+        if isinstance(v, list):
+            out[str(k)] = [str(x) for x in v]
+        elif isinstance(v, dict):
+            out[str(k)] = {str(a): str(b) for a, b in v.items()}
+        elif isinstance(v, (str, int, float)):
+            out[str(k)] = str(v)
+    return out
+
+
+def pick_grade_word(block: dict, grade: str) -> str:
+    """从场景子块里取出该评级的词：支持「整词字符串」和「{评级: 词}」两种写法。"""
+    ow = (block or {}).get("grade_word") or ""
+    if isinstance(ow, dict):
+        return str(ow.get(grade, "") or "")
+    return str(ow or "")
 
 
 @dataclass
@@ -272,6 +470,13 @@ class CopyPack:
     labels: dict[str, str] = field(default_factory=dict)       # 文本键 -> 文字（区块标题/指标名/表头/页脚/元信息）
     radar: dict[str, str] = field(default_factory=dict)        # 雷达维度名：原名 -> 新名
     badge_title: dict[str, str] = field(default_factory=dict)  # 徽章名：原名 -> 新名
+    # ---- 场景整句覆写：模型可在这里自由发挥「一句话总括」，比 labels 更松 ----
+    solve: dict = field(default_factory=dict)      # {headline, grade_word, notes}
+    preheat: dict = field(default_factory=dict)    # {headline, grade_word, tips[]}
+    # ---- 运行时绑定（不参与序列化）：本次算出的真实数值字面量集合 ----
+    # 有了它，TextResolver 才能在渲染时把「模型编的数字」挡回去；
+    # 没有它（None）表示还没算出事实，只做键名/占位符校验。
+    facts_numbers: set[str] | None = field(default=None, repr=False, compare=False)
 
     # ---- 读 ----
     @classmethod
@@ -290,18 +495,27 @@ class CopyPack:
             labels={str(k): str(v) for k, v in (d.get("labels") or {}).items()},
             radar={str(k): str(v) for k, v in (d.get("radar") or {}).items()},
             badge_title={str(k): str(v) for k, v in (d.get("badge_title") or {}).items()},
+            solve=_str_map(d.get("solve")),
+            preheat=_str_map(d.get("preheat")),
         )
 
     # ---- 写 ----
     def to_dict(self) -> dict:
-        return asdict(self)
+        d = asdict(self)
+        d.pop("facts_numbers", None)      # 运行时状态，不进 JSON
+        return d
+
+    def bind_facts(self, facts: dict | None) -> None:
+        """把本次算出的真实数值绑定进来，开启「编数字」的渲染级回退。"""
+        self.facts_numbers = _numbers_of(facts or {}) if facts else None
 
     @property
     def active(self) -> bool:
         """是否有任何字段被模型覆写。"""
         return bool(self.headline or self.persona_label or self.slogan or self.tags
                     or self.quips or self.advice or self.badge_desc or self.cta
-                    or self.labels or self.radar or self.badge_title)
+                    or self.labels or self.radar or self.badge_title
+                    or self.solve or self.preheat)
 
 
 def build_copy_brief(a: "Archive") -> dict:
@@ -403,4 +617,330 @@ def build_copy_brief(a: "Archive") -> dict:
         "dynamic_text": dynamic_text,
         "instructions": instructions,
         "schema": schema,
+    }
+
+
+# ====================================================================== #
+# 护栏：模型写文案时最容易犯的两个错
+#   1. 删掉 {占位符} → 数字丢失（**最严重**，会让卡片显示不全）
+#   2. 凭空编数字 → 事实失真（数值必须来自 facts）
+# 两者都只**披露告警**，不静默放行，也不硬阻断（避免误伤正常的文字创作）。
+# ====================================================================== #
+_RE_PLACEHOLDER = re.compile(r"\{(\w+)\}")
+_RE_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def missing_placeholders(key: str, override: str) -> list[str]:
+    """覆写文案相对默认模板丢了哪些占位符。空列表 = 安全。"""
+    default = TEXT_REGISTRY.get(key, {}).get("default", "")
+    need = set(_RE_PLACEHOLDER.findall(default))
+    have = set(_RE_PLACEHOLDER.findall(override))
+    return sorted(need - have)
+
+
+def _closest_key(key: str) -> str:
+    """给写错的键猜一个最像的正确键（前缀相同优先，其次编辑距离）。"""
+    if not key or "." not in key:
+        return ""
+    prefix = key.split(".")[0] + "."
+    cands = [k for k in TEXT_REGISTRY if k.startswith(prefix)] or list(TEXT_REGISTRY)
+    tail = key.split(".")[-1]
+    best, best_score = "", 10**9
+    for c in cands:
+        a, b = c.split(".")[-1], tail
+        # 简易编辑距离（够用即可，候选键都是短字符串）
+        dp = list(range(len(b) + 1))
+        for i, ca in enumerate(a, 1):
+            prev, dp[0] = dp[0], i
+            for j, cb in enumerate(b, 1):
+                cur = dp[j]
+                dp[j] = min(prev + (ca != cb), dp[j] + 1, dp[j - 1] + 1)
+                prev = cur
+        if dp[-1] < best_score:
+            best, best_score = c, dp[-1]
+    return best if best_score <= max(2, len(tail) // 2) else ""
+
+
+def numeric_leak_warnings(pack: "CopyPack", allowed_numbers: set[str] | None) -> list[str]:
+    """只做「编数字」检测——用于**已知真实数值之后**的二次校验。
+
+    solve/preheat 的数值是算出来才知道的，所以分两阶段：
+    拿到结果前先查键名/占位符（见 :func:`validate_copy_pack`），
+    拿到结果后再用真实 facts 查有没有编数字（本函数）。
+    """
+    if not allowed_numbers:
+        return []
+    warns: list[str] = []
+    for key, text in (pack.labels or {}).items():
+        if key not in TEXT_REGISTRY:
+            continue
+        for num in _leaked_numbers(text, TEXT_REGISTRY[key].get("default", ""), allowed_numbers):
+            warns.append(f"labels.{key} 出现未知数字「{num}」（不在本次 facts 里，"
+                         f"疑似编造） → 已回退默认文案")
+            break
+    warns.extend(_free_text_leaks(pack, allowed_numbers))
+    return warns
+
+
+def _free_text_leaks(pack: "CopyPack", allowed_numbers: set[str] | None) -> list[str]:
+    """模型**自由发挥**（没有默认模板兜底）的那几段文字里的编数字检测。"""
+    if not allowed_numbers:
+        return []
+    free: list[tuple[str, str]] = [
+        ("headline", pack.headline), ("slogan", pack.slogan), ("cta", pack.cta),
+        ("solve.headline", str(pack.solve.get("headline", ""))),
+        ("preheat.headline", str(pack.preheat.get("headline", ""))),
+    ]
+    for blk_name, blk in (("solve", pack.solve), ("preheat", pack.preheat)):
+        gw = blk.get("grade_word")
+        if isinstance(gw, str):
+            free.append((f"{blk_name}.grade_word", gw))
+        elif isinstance(gw, dict):                      # {评级: 词} 写法逐条查
+            for g, w in gw.items():
+                if isinstance(w, str):
+                    free.append((f"{blk_name}.grade_word.{g}", w))
+    for q in pack.quips:
+        free.append(("quips", q))
+    for x in pack.advice:
+        free.append(("advice", x))
+    for t in (pack.preheat.get("tips") or []):
+        if isinstance(t, str):
+            free.append(("preheat.tips", t))
+    for t in (pack.solve.get("notes") or []):
+        if isinstance(t, str):
+            free.append(("solve.notes", t))
+    warns: list[str] = []
+    for name, text in free:
+        if not text:
+            continue
+        for num in _leaked_numbers(text, "", allowed_numbers):
+            warns.append(f"{name} 出现未知数字「{num}」（不在 facts 里，"
+                         f"疑似编造，请改用 facts 数值或删掉）")
+            break
+    return warns
+
+
+def _leaked_numbers(text: str, default_text: str, allowed: set[str] | None) -> list[str]:
+    """覆写文本里「凭空出现」的数字：不在默认模板里，也不在 facts 允许集合里。
+
+    ``allowed`` 为 None 表示没有 facts 可比对，此时不做数值检测（避免误伤）。
+    """
+    if allowed is None:
+        return []
+    base = set(_RE_NUMBER.findall(default_text or ""))
+    return [n for n in _RE_NUMBER.findall(text or "") if n not in base and n not in allowed]
+
+
+def validate_copy_pack(pack: "CopyPack", allowed_numbers: set[str] | None = None) -> list[str]:
+    """校验模型产出的文案包，返回**人类可读的告警列表**（空 = 没问题）。
+
+    - 键写错：模型发明了一个不存在的 key → 静默失效（最容易被忽略，必须报）；
+    - 占位符丢失：必须报，因为会直接导致数值消失；
+    - 数值泄漏：模型文案里出现了 facts 中不存在的数字（可能是编的）。
+    """
+    warns: list[str] = []
+
+    for key, text in (pack.labels or {}).items():
+        if key not in TEXT_REGISTRY:
+            near = _closest_key(key)
+            warns.append(f"labels.{key} 不是已知文案键，已忽略（这条改写不会生效）"
+                         + (f"，是不是想写 {near}？" if near else "，请用 brief 的 text_map 里的 key"))
+            continue
+        lost = missing_placeholders(key, text)
+        if lost:
+            warns.append(f"labels.{key} 丢失占位符 {'、'.join('{' + x + '}' for x in lost)}"
+                         f" → 该条已回退默认文案（否则数值会消失）")
+        for num in _leaked_numbers(text, TEXT_REGISTRY[key].get("default", ""), allowed_numbers):
+            warns.append(f"labels.{key} 出现未知数字「{num}」（不在 facts 里，疑似编造）"
+                         f" → 已回退默认文案；请改用 {{占位符}} 或删掉该数字")
+            break
+
+    # 顶层字段名写错（如 solvd / preheat 拼错、solve 里塞了未知子键）同样静默失效
+    for block, allowed_sub in (("solve", {"headline", "grade_word", "notes"}),
+                               ("preheat", {"headline", "grade_word", "tips"})):
+        blk = getattr(pack, block, {}) or {}
+        for sub in blk:
+            if sub not in allowed_sub:
+                warns.append(f"{block}.{sub} 不是已知字段，已忽略（可用：{'、'.join(sorted(allowed_sub))}）")
+
+    # 模型自由发挥的文本最容易夹带编造数字（与 labels 用同一套检测口径）
+    warns.extend(_free_text_leaks(pack, allowed_numbers))
+    return warns
+
+
+def brief_allowed_numbers(brief_path) -> set[str]:
+    """从 brief 文件里取出「允许出现的数字」集合，用于校验模型有没有编数字。"""
+    try:
+        d = json.loads(Path(brief_path).read_text(encoding="utf-8"))
+    except Exception:                                                        # noqa: BLE001
+        return set()
+    return _numbers_of(d.get("facts") or {})
+
+
+def _numbers_of(facts: dict, extra: list[float] | None = None) -> set[str]:
+    """把 facts 里的数值摊平成「允许出现的数字字面量」集合（含常见格式化变体）。"""
+    out: set[str] = set()
+    stack: list = [facts]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, dict):
+            stack.extend(cur.values())
+        elif isinstance(cur, (list, tuple)):
+            stack.extend(cur)
+        elif isinstance(cur, bool):
+            continue
+        elif isinstance(cur, (int, float)):
+            for v in (cur, round(float(cur), 1), round(float(cur), 2), int(cur)):
+                s = f"{v:g}" if isinstance(v, float) else str(v)
+                out.add(s)
+                out.add(str(int(float(s)))) if float(s) == int(float(s)) else None
+    for v in extra or []:
+        out.add(f"{v:g}")
+    return out
+
+
+# ====================================================================== #
+# 麦麦最优解 · McSolve 的文案素材
+# ====================================================================== #
+def build_solve_brief(sol, *, store_name: str = "", offline: bool = False,
+                      repo_url: str = "") -> dict:
+    """把「最优解」整理成文案素材，交给 WorkBuddy 写文案。"""
+    grade_word = {"S": "神之一单", "A": "相当划算", "B": "正常水平",
+                  "C": "溢价明显"}.get(getattr(sol, "grade", ""), "")
+    facts = {
+        "store_name": store_name,
+        "original": round(getattr(sol, "original", 0.0), 2),
+        "paid": round(getattr(sol, "paid", 0.0), 2),
+        "discount": round(getattr(sol, "discount", 0.0), 2),
+        "discount_rate_pct": round(getattr(sol, "save_rate", 0.0) * 100, 1),
+        "grade": getattr(sol, "grade", ""),
+        "item_count": getattr(sol, "count", 0),
+        "baseline_count": getattr(sol, "baseline_count", 0),
+        "baseline_paid": round(getattr(sol, "baseline_paid", 0.0), 2),
+        "baseline_avg": round(getattr(sol, "baseline_avg", 0.0), 2),
+        "avg_price": round(getattr(sol, "avg_price", 0.0), 2),
+        "extra_count": getattr(sol, "extra_count", 0),
+        "saved": round(getattr(sol, "saved", 0.0), 2),
+        "enum_count": getattr(sol, "enum_count", 0),
+        "valid_count": getattr(sol, "valid_count", 0),
+        "verify_count": getattr(sol, "verify_count", 0),
+        "verify_ok": getattr(sol, "verify_ok", 0),
+        "fail_count": getattr(sol, "fail_count", 0),
+        "items": [(i.name or i.product_code) for i in getattr(sol, "items", [])],
+        "coupon_rules": [r.readable for r in getattr(sol, "rules", [])],
+        "nutrition": dict(getattr(sol, "nutrition", {}) or {}),
+        "offline": offline,
+    }
+    text_map = {k: v["default"] for k, v in TEXT_REGISTRY.items() if k.startswith("sv.")}
+    rule_drafts = {
+        "headline": (f"实付 ¥{facts['paid']:.2f}，省了 {facts['discount_rate_pct']:.0f}%"
+                     if facts["original"] else ""),
+        "grade_word": grade_word,
+        "vs_conclusion": (f"同样的东西，白省 ¥{facts['saved']:.2f}" if facts["saved"] > 0 else
+                          f"多花 ¥{-facts['saved']:.2f}，多得 {facts['extra_count']} 件，"
+                          f"均价从 ¥{facts['baseline_avg']:.2f} 降到 ¥{facts['avg_price']:.2f}"),
+    }
+    instructions = (
+        "你是「麦门文案师」，为一张「麦麦最优解」战报写**全部展示文字**。"
+        "严格基于 facts 里的真实数字，**不得编造未出现的数字或事实**。"
+        "风格：口语、有梗、可截图传播；核心卖点是「这不是省钱建议，是官方接口验过价的最优解」。"
+        "**solve.headline 是重点**：用一句话把这一单的划算程度说出来（≤22 字），"
+        "要比 rule_drafts.headline 更有记忆点，可以玩梗、可以自嘲，但数字必须来自 facts。"
+        "**labels 覆盖除数值外的所有文字**（key 见 text_map）：区块标题、指标名、表头、口径说明、"
+        "页脚都可改写。**改写 labels 时必须保留 {占位符}**——它们由程序填入真实数值，"
+        "删掉会导致数字丢失（我们会校验，丢了会回退默认）。"
+        "**特别提醒 sv.vs_note / sv.vs_note_html**：这是解释「省了钱却要多掏」的口径说明，"
+        "必须讲清楚两个百分比量纲不同，但可以用更直白的说法。"
+        "产出严格 JSON，字段见 schema。"
+    )
+    return {
+        "task": "为「麦麦最优解 McSolve」生成全部展示文字（WorkBuddy 在环，无需外部 Key）",
+        "scene": "solve",
+        "facts": facts,
+        "rule_drafts": rule_drafts,
+        "text_map": text_map,
+        "instructions": instructions,
+        "schema": {
+            "source": "workbuddy",
+            "solve": {
+                "headline": "卡片顶部一句话总括（≤22 字，数字须来自 facts）",
+                "grade_word": ("评级词（≤10 字）。两种写法："
+                               "① 字符串 → 所有评级同一句；"
+                               "② 对象 → {\"S\": …, \"A\": …, \"B\": …, \"C\": …} 按评级各写一句"
+                               "（推荐，四个档位本来就不该同词；没写的档位回退默认）"),
+            },
+            "labels": {"<text_map 里的 sv.* key>": "改写后的文字；必须保留 {占位符}"},
+        },
+        "repo_url": repo_url,
+    }
+
+
+# ====================================================================== #
+# 麦麦预热台 · McPreheat 的文案素材
+# ====================================================================== #
+def build_preheat_brief(pre, *, repo_url: str = "") -> dict:
+    """把「预热台」整理成文案素材，交给 WorkBuddy 写文案。"""
+    facts = {
+        "today": str(getattr(pre, "today", "")),
+        "server_time": getattr(pre, "server_time", ""),
+        "target_title": (pre.target.title if getattr(pre, "target", None) else ""),
+        "days_left": getattr(pre, "days_left", None),
+        "missing": [{"title": c.title, "days": c.days_to_expire, "until": c.until_text}
+                    for c in getattr(pre, "missing", [])],
+        "surviving": [{"title": c.title, "days": c.days_to_expire,
+                       "on_edge": getattr(c, "on_edge", False)}
+                      for c in getattr(pre, "surviving", [])],
+        "urgent": [{"title": c.title, "days": c.days_to_expire} for c in getattr(pre, "urgent", [])],
+        "running": [c.title for c in getattr(pre, "running", [])],
+        "upcoming": [{"title": c.title, "date": c.date} for c in getattr(pre, "upcoming", [])],
+        "unparsed_count": getattr(pre, "unparsed_count", 0),
+        "score": getattr(pre, "score", 0),
+        "grade": getattr(pre, "grade", ""),
+        "points": getattr(pre, "points", 0.0),
+        "redeemable": getattr(pre, "redeemable", 0),
+        "coupon_count": len(getattr(pre, "coupons", [])),
+    }
+    text_map = {k: v["default"] for k, v in TEXT_REGISTRY.items() if k.startswith("ph.")}
+    rule_drafts = {
+        "headline": getattr(pre, "headline", ""),
+        "tips": list(getattr(pre, "tips", [])),
+        "grade_word": {"S": "弹药充足，稳了", "A": "大体就绪，还能补",
+                       "B": "有缺口，先看冲突", "C": "裸奔进场，建议先清券"
+                       }.get(getattr(pre, "grade", ""), ""),
+    }
+    instructions = (
+        "你是「麦门文案师」，为一张「麦麦预热台」倒计时备战卡写**全部展示文字**。"
+        "严格基于 facts 里的真实数字，**不得编造未出现的数字或事实**。"
+        "这张卡的钩子是「活动日历 × 券到期」的交叉冲突：**有些券等不到活动那天**。"
+        "风格：有紧迫感、口语、可截图；但**不要渲染焦虑或鼓励过度消费**——"
+        "定位是「看见并提醒」，不是「催你赶紧吃」。"
+        "**preheat.headline 是重点**：一句话把倒计时和冲突同时说出来（≤24 字），"
+        "数字必须来自 facts（days_left / missing 条数）。有冲突时优先用冲突做钩子。"
+        "**preheat.tips 可整段重写**（2-5 条），每条都要**落到具体某张券或某个事实上**，"
+        "不要写「关注官方活动」这种通用鸡汤。"
+        "**labels 覆盖除数值外的所有文字**（key 见 text_map），"
+        "**改写 labels 时必须保留 {占位符}**——删掉会导致数字丢失（我们会校验）。"
+        "ph.grade_S / ph.grade_A / ph.grade_B / ph.grade_C 是备战度评级词，可以改得更有趣。"
+        "产出严格 JSON，字段见 schema。"
+    )
+    return {
+        "task": "为「麦麦预热台 McPreheat」生成全部展示文字（WorkBuddy 在环，无需外部 Key）",
+        "scene": "preheat",
+        "facts": facts,
+        "rule_drafts": rule_drafts,
+        "text_map": text_map,
+        "instructions": instructions,
+        "schema": {
+            "source": "workbuddy",
+            "preheat": {
+                "headline": "倒计时钩子句（≤24 字，数字须来自 facts）",
+                "grade_word": ("备战度评级词（≤10 字）。两种写法："
+                               "① 字符串 → 所有评级同一句；"
+                               "② 对象 → {\"S\": …, \"A\": …, \"B\": …, \"C\": …} "
+                               "按备战度各写一句（推荐；没写的档位回退默认）"),
+                "tips": ["2-5 条行动建议，每条落到具体券/具体事实上"],
+            },
+            "labels": {"<text_map 里的 ph.* key>": "改写后的文字；必须保留 {占位符}"},
+        },
+        "repo_url": repo_url,
     }

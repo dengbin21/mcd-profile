@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>麦麦最优解 · McSolve —— 先帮你算出最划算的一单，再帮你复盘吃过的每一单</title>
+<meta name="description" content="把麦当劳官方 MCP 的 calculate-price 当价格预言机反复调用，穷举出这一单怎么点最划算。全程只读、不产生订单。">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0B0A08;color:#F6F4EF;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7;-webkit-font-smoothing:antialiased}
+a{color:#FFC72C;text-decoration:none}
+.wrap{max-width:720px;margin:0 auto;padding:0 20px 64px}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em;background:rgba(255,255,255,.07);padding:1px 6px;border-radius:5px}
+.kicker{font-size:12px;letter-spacing:.28em;color:#8A7A48}
+h1{font-size:34px;line-height:1.25;font-weight:800;margin:12px 0 0;letter-spacing:-.01em}
+h2{font-size:22px;font-weight:800;margin:0 0 6px}
+h3{font-size:15px;font-weight:700;margin:0 0 4px}
+.lede{font-size:16px;color:#B8B2A6;margin-top:12px}
+.sec{margin-top:44px}
+.muted{color:#8C8578;font-size:14px}
+.gold{color:#FFC72C}
+.card{background:#131109;border:1px solid rgba(255,199,44,.16);border-radius:20px;padding:22px 20px}
+.hero{padding-top:40px;text-align:center}
+.hero .lede{margin-left:auto;margin-right:auto;max-width:560px}
+.btn{display:inline-block;background:#FFC72C;color:#171205;font-weight:800;font-size:15px;
+  padding:12px 26px;border-radius:999px;margin-top:18px}
+.btn:active{opacity:.85}
+.btn.ghost{background:transparent;color:#FFC72C;border:1px solid rgba(255,199,44,.4)}
+.stats{display:flex;gap:10px;margin-top:26px}
+.stat{flex:1;background:#131109;border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:14px 8px}
+.stat b{display:block;font-size:22px;color:#FFC72C;line-height:1.2}
+.stat span{font-size:11px;color:#8C8578}
+.pick{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;max-height:190px;overflow-y:auto;padding:2px}
+.pick button{font:inherit;font-size:13px;padding:7px 13px;border-radius:999px;cursor:pointer;
+  background:#1A1710;color:#C9C3B6;border:1px solid rgba(255,255,255,.09)}
+.pick button.on{background:#FFC72C;color:#171205;border-color:#FFC72C;font-weight:700}
+.row{display:flex;gap:12px;align-items:center;margin-top:16px;flex-wrap:wrap}
+input[type=number]{font:inherit;background:#1A1710;border:1px solid rgba(255,255,255,.12);
+  color:#F6F4EF;border-radius:10px;padding:9px 12px;width:120px}
+.go{font:inherit;font-weight:800;font-size:15px;background:#FFC72C;color:#171205;border:0;
+  border-radius:12px;padding:11px 24px;cursor:pointer}
+.go:disabled{opacity:.5}
+.res{margin-top:20px;display:none}
+.res.show{display:block;animation:pop .32s ease both}
+@keyframes pop{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.big{font-size:52px;font-weight:800;color:#FFC72C;line-height:1}
+.strike{text-decoration:line-through;color:#8C8578;font-size:18px;margin-left:10px}
+.verdict{margin-top:16px;background:rgba(23,195,162,.10);border:1px solid rgba(23,195,162,.3);
+  border-radius:14px;padding:14px 16px;font-size:15px;font-weight:700;color:#5FE6C6;text-align:center}
+.vs{display:flex;gap:10px;margin-top:16px}
+.vsc{flex:1;background:#1A1710;border-radius:14px;padding:14px 10px;text-align:center}
+.vsc b{display:block;font-size:24px;margin-top:6px}
+.vsc small{display:block;font-size:11px;color:#8C8578;margin-top:5px}
+.dim{color:#8C8578}
+.list{margin-top:14px}
+.list div{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px dashed rgba(255,255,255,.08);font-size:15px}
+.list div:last-child{border:0}
+.log{background:#0E0C07;border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:16px;
+  font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:#9FD8B0;line-height:1.9;white-space:pre-wrap}
+table{width:100%;border-collapse:collapse;margin-top:14px;font-size:14px}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid rgba(255,255,255,.07);vertical-align:top}
+th{color:#8C8578;font-weight:400;font-size:12px}
+td b{color:#FFC72C}
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:12px}
+.chip{font-size:12px;padding:5px 11px;border-radius:999px;background:rgba(255,199,44,.10);color:#FFE38A}
+.chip.red{background:rgba(226,58,46,.14);color:#FF7A6B}
+.steps{counter-reset:s;margin-top:14px}
+.steps li{list-style:none;counter-increment:s;position:relative;padding-left:34px;margin-top:12px;font-size:14.5px}
+.steps li::before{content:counter(s);position:absolute;left:0;top:2px;width:22px;height:22px;border-radius:50%;
+  background:rgba(255,199,44,.16);color:#FFC72C;font-size:12px;font-weight:800;text-align:center;line-height:22px}
+.foot{margin-top:52px;padding-top:24px;border-top:1px solid rgba(255,255,255,.08);
+  text-align:center;font-size:12.5px;color:#7C766D}
+.cta{font-size:16px;font-weight:700;margin-bottom:10px}
+/* —— 预热台 —— */
+.ph-clock{display:flex;gap:10px;margin-top:16px}
+.ph-unit{flex:1;background:#171205;border:1px solid rgba(255,199,44,.22);border-radius:14px;
+  padding:12px 4px;text-align:center}
+.ph-unit b{display:block;font-size:30px;font-weight:800;color:#FFC72C;line-height:1.1;
+  font-variant-numeric:tabular-nums}
+.ph-unit span{font-size:12px;color:#98938B}
+.ph-bar{margin-top:14px;height:8px;border-radius:6px;background:rgba(255,255,255,.09);overflow:hidden}
+.ph-bar i{display:block;height:100%;background:#FFC72C;border-radius:6px;transition:width .5s}
+.ph-conflict{margin-top:14px;padding:12px 14px;border-radius:12px;background:#1E0F0C;
+  border:1px solid rgba(255,92,74,.34);color:#FF8A76;font-size:14px;line-height:1.75}
+.ph-row{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:14px}
+.ph-row:last-child{border-bottom:0}
+.ph-tag{color:#17C3A2;font-weight:700;min-width:16px}
+.ph-tag.bad{color:#FF8A76}
+.ph-grade{display:inline-block;padding:2px 10px;border-radius:8px;font-weight:800;color:#171205;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="hero">
+  <div class="kicker">M C S O L V E</div>
+  <h1>麦麦最优解</h1>
+  <p class="lede">把麦当劳官方 MCP 的 <code>calculate-price</code> 当<b class="gold">价格预言机</b>反复调用：<br>
+  穷举上千种组合，逐一让官方接口验价，挑出这一单<b class="gold">最划算</b>的买法。<br>
+  全程只读——不领券、不抽奖、<b class="gold">不产生任何订单</b>。</p>
+  <div class="stats">
+    <div class="stat"><b>2325</b><span>本地枚举组合</span></div>
+    <div class="stat"><b>30</b><span>官方验价次数</span></div>
+    <div class="stat"><b>40%</b><span>最优解省钱率</span></div>
+  </div>
+  <a class="btn" href="https://github.com/dengbin21/mcd-profile">在 GitHub 上 Star 一下</a>
+</div>
+
+<div class="sec">
+  <h2>⏱ 麦麦预热台：你的券，等得到那天吗</h2>
+  <p class="muted">官方 <code>campaign-calendar</code> 给出未来的活动，
+  <code>query-my-coupons</code> 给出每张券的到期日。把两者交叉，就出现一个真实冲突——
+  <b class="gold">有些券会在活动开始前就作废</b>。倒计时在下面实时走秒。</p>
+
+  <div class="card" style="margin-top:14px">
+    <div id="phTitle" style="font-size:17px;font-weight:700;color:#FFC72C;line-height:1.6">—</div>
+    <div class="ph-clock">
+      <div class="ph-unit"><b id="phD">--</b><span>天</span></div>
+      <div class="ph-unit"><b id="phH">--</b><span>时</span></div>
+      <div class="ph-unit"><b id="phM">--</b><span>分</span></div>
+      <div class="ph-unit"><b id="phS">--</b><span>秒</span></div>
+    </div>
+    <div class="ph-bar"><i id="phBar" style="width:0%"></i></div>
+    <div id="phScore" class="muted" style="margin-top:12px"></div>
+    <div id="phConflict"></div>
+    <div id="phList" style="margin-top:12px"></div>
+    <div class="muted" style="margin-top:12px;font-size:12.5px">
+      脱敏示例数据：活动来自官方活动日历样例，券到期取自真实券面文案的时间字段。
+    </div>
+  </div>
+</div>
+
+<div class="sec">
+  <h2>先玩一下：不用登录，直接算</h2>
+  <p class="muted">选你想吃的（可以多选），点「算最优解」。下面这份菜单是脱敏样例数据，
+  券规则取自真实券面文案——所以算出来的是<b>真实算法跑出的结果</b>，不是写死的演示。</p>
+
+  <div class="card" style="margin-top:14px">
+    <h3>1 · 你想吃什么</h3>
+    <div class="pick" id="pick"></div>
+    <div class="row">
+      <span class="muted">2 · 预算上限（元，可留空）</span>
+      <input type="number" id="budget" placeholder="不限" min="0" step="1">
+      <button class="go" id="go">算最优解</button>
+    </div>
+    <div class="muted" id="hint" style="margin-top:10px">已选 0 件</div>
+  </div>
+
+  <div class="card res" id="res">
+    <div class="kicker">最优解 · 评级 <span id="grade" class="gold"></span></div>
+    <div style="margin-top:10px"><span class="big">¥<span id="paid"></span></span>
+      <span class="strike">¥<span id="orig"></span></span></div>
+    <div class="muted" id="saveline"></div>
+    <div class="verdict" id="verdict"></div>
+    <div class="vs">
+      <div class="vsc"><span class="muted">你的直觉点法</span><b class="dim" id="bpaid"></b>
+        <small id="bsub"></small></div>
+      <div class="vsc"><span class="muted">算法最优解</span><b class="gold" id="opaid"></b>
+        <small id="osub"></small></div>
+    </div>
+    <div class="list" id="items"></div>
+    <div class="muted" id="proc" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<div class="sec">
+  <h2>它到底在算什么</h2>
+  <p class="muted">真实运行时，终端会这么跑（下面这段是脱样例数据实跑的输出）：</p>
+  <div class="log">菜单 47 款 ｜ 券 8 张（可解析规则 6 条）
+必选：板烧鸡腿堡
+正在搜索最优组合（最多追加 3 件）…
+  [1]  验价 → 新的最优 ¥21.50
+  [2]  验价 → 新的最优 ¥21.90   ← 触发「三件任选6折」
+  …
+  [30] 验价完成
+
+直觉点法   1 件   ¥21.50   均价 ¥21.50
+算法最优解 3 件   ¥21.90   均价 ¥7.30
+→ 多花 ¥0.4，多得 2 件，均价降 66%</div>
+  <p class="muted" style="margin-top:12px">关键在<b class="gold">第 2 次验价</b>：单点汉堡不触发折扣，
+  凑够三件才吃到「6 折」——这个差别人不会告诉你，但接口会。</p>
+</div>
+
+<div class="sec">
+  <h2>为什么别人做不到</h2>
+  <p class="muted">全场都把 <code>calculate-price</code> 当「下单前的最后一步」——
+  调一次，看看多少钱，然后下单，用完即弃。</p>
+  <p style="margin-top:10px">它其实是<b class="gold">免费、只读、不产生订单、可以无限次调用</b>的接口。
+  换句话说：<b>不花一分钱，你就能知道任意组合的真实实付价。</b>
+  把它当模拟器反复调用，就是一个真实数据的组合优化引擎。</p>
+  <div class="chips">
+    <span class="chip">query-meals　全菜单 100+ 款</span>
+    <span class="chip">query-my-coupons　你的券</span>
+    <span class="chip">query-store-coupons　门店活动</span>
+    <span class="chip">available-coupons　可领券</span>
+    <span class="chip">list-nutrition-foods　营养库</span>
+    <span class="chip red">calculate-price × N　验价引擎</span>
+  </div>
+  <p class="muted" style="margin-top:14px">调用量怎么控：组合空间是天文数字，所以分两段——
+  <b>本地免费枚举几千种</b> → 按券门槛与预算剪枝排序 → 只对 <b>Top 30</b> 个候选调官方接口验真实价。
+  本地估算只用来排序，<b>最终价格一律以官方为准</b>。</p>
+</div>
+
+<div class="sec">
+  <h2>和同类作品比，三个不一样</h2>
+  <table>
+    <tr><th></th><th>多数参赛作品</th><th>McSolve</th></tr>
+    <tr><td>场景</td><td>点餐前推荐吃什么</td><td><b>点餐前算出怎么买最划算</b></td></tr>
+    <tr><td>价格口径</td><td>按菜单价估算</td><td><b>官方 calculate-price 逐单验价</b></td></tr>
+    <tr><td>券的处理</td><td>列出来给你看</td><td><b>解析门槛，用凑单去触发它</b></td></tr>
+    <tr><td>写操作</td><td>代下单 / 领券 / 抽奖</td><td><b>全程只读，一分钱不动</b></td></tr>
+    <tr><td>产出</td><td>一份建议</td><td><b>一个带评级的最优解 + 战报长图</b></td></tr>
+  </table>
+</div>
+
+<div class="sec">
+  <h2>顺便：还能复盘吃过的每一单</h2>
+  <p class="muted">同一个仓库、同一套 MCP 能力，还有一份「吃之后」的档案——
+  算完这一单，吃完了再回来看看你到底是个什么麦门人。</p>
+  <div class="chips" style="margin-top:12px">
+    <span class="chip">消费</span><span class="chip">省钱</span><span class="chip">健康</span>
+    <span class="chip">习惯</span><span class="chip">权益</span><span class="chip">活动</span>
+    <span class="chip red">麦门人格 + 六维雷达</span>
+  </div>
+  <p class="muted" style="margin-top:12px">千人千面：人格决定整套配色与徽章，输出竖版长图，
+  同一份档案不同人打开是不同海报。</p>
+</div>
+
+<div class="sec">
+  <h2>怎么用</h2>
+  <ol class="steps">
+    <li>配好 <code>MCD_MCP_TOKEN</code>（官方 MCP 的 Token）</li>
+    <li><code>mcd-profile solve --items 板烧鸡腿堡</code>　→　出最优解 + 战报长图</li>
+    <li>照着最优解下单，事后 <code>mcd-profile archive</code> 复盘这一单</li>
+  </ol>
+  <p class="muted" style="margin-top:14px">没有 Token 也能玩：<code>--offline</code> 用脱敏样例数据跑完整求解链路。
+  下单是<b>可选</b>的，且默认 dry-run，必须显式确认才会真正创建订单。</p>
+</div>
+
+<div class="sec">
+  <div class="card">
+    <h3>安全边界</h3>
+    <p class="muted" style="margin-top:6px">本作品在只读边界内调用官方 20 个工具；
+    唯一会改变账户状态的 <code>create-order</code> 默认关闭，
+    下单前会打印门店 / 餐品 / 实付明细，必须显式确认。
+    <code>cancel-order</code>、<code>draw-lottery</code>、<code>auto-bind-coupons</code> 一律不碰。</p>
+  </div>
+</div>
+
+<div class="foot">
+  <div class="cta"><a href="https://github.com/dengbin21/mcd-profile">github.com/dengbin21/mcd-profile</a></div>
+  麦当劳 MCP 创意开发大赛参赛作品 ｜ MIT 协议开源 ｜ 与麦当劳官方无隶属关系<br>
+  页面上的求解结果为脱敏样例数据的演算结果，实际价格以麦当劳官方渠道为准<br>
+  营养值仅供复盘参考，不构成营养建议
+</div>
+
+</div>
+
+<script>
+const MENU=[
+["9900010001","板烧鸡腿堡",21.5,25],["9900010002","巨无霸",24,28],["9900010003","麦辣鸡腿汉堡",20,23],
+["9900010004","麦香鸡",15,17],["9900010005","麦香鱼",15,17],["9900010006","吉士汉堡包",12,14],
+["9900010007","双层吉士汉堡",16,19],["9900010008","不素之霸双层牛堡",26,30],["9900010009","培根蔬萃双层牛堡",25,29],
+["9900010010","培根安格斯厚牛堡",33,38],["9900010011","双层深海鳕鱼堡",26,30],["9900010012","猪柳麦满分",13,15],
+["9900010013","猪柳蛋麦满分",15,17.5],["9900010014","烟肉蛋麦满分",15,17.5],["9900010015","火腿扒麦满分",13,15],
+["9900010016","原味板烧鸡腿麦满分",15,18],["9900010017","大脆鸡扒麦满分",16,19],["9900010018","麦乐鸡5块",21,24],
+["9900010019","麦乐鸡4块",17,20],["9900010020","麦辣鸡翅-2块",13,15],["9900010021","那么大鸡排",18,21],
+["9900010022","麦麦脆汁鸡-琵琶腿",16,19],["9900010023","麦麦脆汁鸡-带骨里脊",15,18],["9900010024","麦麦趣鸡球",13,15],
+["9900010025","薄皮焦香V翅",15,18],["9900010026","中薯条",12,14],["9900010027","大薯条",14,17],
+["9900010028","小薯条",9,11],["9900010029","脆薯饼",8,10],["9900010030","脆香油条",7,9],
+["9900010031","香芋派",8,10],["9900010032","菠萝派",8,10],["9900010033","圆筒冰淇淋",6,7],
+["9900010034","朱古力新地",9,11],["9900010035","奥利奥麦旋风",13,15],["9900010036","草莓麦旋风",13,15],
+["9900010037","可乐中杯",9,11],["9900010038","可乐大杯",11,13],["9900010039","100%苹果汁",9,11],
+["9900010040","纯牛奶（盒装）",8,9],["9900010041","大杯玉米杯",10,12],["9900010042","阳光柠檬红茶中杯",10,12],
+["9900010043","雪碧中杯",9,11],["9900010044","大杯鲜萃咖啡",12,15],["9900010045","冰奶铁中杯",15,18],
+["9900010046","皮蛋鸡肉粥",12,14],["9900010047","德式图林根香肠",10,12]
+];
+const TITLES=["免费香芋派","满30减5元券","免费中薯条","三件任选6折","免费脆薯饼","中薯条买一送一","麦旋风任选"];
+const CN={"一":1,"两":2,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9,"十":10};
+const toInt=s=>/^\d+$/.test(s)?parseInt(s):(CN[s]||0);
+
+function parseCoupons(titles){
+  return titles.map(t=>{
+    const r={title:t,kind:"unknown",threshold:0,need:0,off:0,freeName:""};
+    let m=t.match(/满\s*(\d+(?:\.\d+)?)\s*元?\s*(?:减|省|立减)\s*(\d+(?:\.\d+)?)/);
+    if(m){r.kind="threshold";r.threshold=+m[1];r.off=+m[2];return r}
+    m=t.match(/([0-9一二三四五六七八九十两]+)\s*件.*?(\d+(?:\.\d+)?)\s*折/);
+    if(m&&+m[2]>0&&+m[2]<10&&toInt(m[1])>=2){r.kind="bundle";r.need=toInt(m[1]);r.off=+m[2]/10;return r}
+    m=t.match(/(.{1,10}?)\s*买一?送一/);
+    if(m){r.kind="bogo";r.freeName=m[1].trim();return r}
+    if(/买一?送一|第?二?份半价/.test(t)){r.kind="bogo";return r}
+    m=t.match(/免费\s*(.{1,12}?)(?:券|$)/);
+    if(m){r.kind="free";r.freeName=m[1].trim();return r}
+    m=t.match(/(\d+(?:\.\d+)?)\s*折/);
+    if(m&&+m[1]>0&&+m[1]<10){r.kind="percent";r.off=+m[1]/10}
+    return r;
+  });
+}
+const RULES=parseCoupons(TITLES);
+
+function estDiscount(items){
+  const sub=items.reduce((a,i)=>a+i[2],0), n=items.length;
+  let best=0;
+  for(const r of RULES){
+    if(r.kind==="threshold"&&sub>=r.threshold) best=Math.max(best,r.off);
+    else if(r.kind==="bundle"&&n>=r.need) best=Math.max(best,sub*(1-r.off));
+    else if(r.kind==="percent") best=Math.max(best,sub*(1-r.off));
+    else if(r.kind==="free"){
+      const h=items.filter(i=>i[1].includes(r.freeName));
+      if(h.length) best=Math.max(best,...h.map(i=>i[2]));
+    }else if(r.kind==="bogo"){
+      if(r.freeName){const h=items.filter(i=>i[1].includes(r.freeName));
+        if(h.length>=2) best=Math.max(best,Math.min(...h.map(i=>i[2])));}
+      else if(n>=2) best=Math.max(best,sub*0.1);
+    }
+  }
+  return Math.min(best,sub);
+}
+
+function combos(arr,k){
+  if(k===0) return [[]];
+  if(arr.length<k) return [];
+  const out=[];
+  for(let i=0;i<=arr.length-k;i++){
+    for(const rest of combos(arr.slice(i+1),k-1)) out.push([arr[i],...rest]);
+  }
+  return out;
+}
+
+function solve(mustCodes,budget){
+  const byCode=c=>MENU.find(m=>m[0]===c);
+  const must=mustCodes.map(byCode).filter(Boolean);
+  const mustSum=must.reduce((a,i)=>a+i[2],0);
+  const mk=items=>{const o=items.reduce((a,i)=>a+i[2],0);
+    const p=Math.max(o-estDiscount(items),0);return{items,orig:o,paid:p,r:o?(o-p)/o:0}};
+  let best=mk(must); const baseline=mk(must);
+  // 候选池排序与 Python 端一致：免费券点名的商品优先，其次折扣力度大的
+  const frees=RULES.filter(r=>r.kind==="free").map(r=>r.freeName);
+  const pool=MENU.filter(m=>!mustCodes.includes(m[0]))
+    .map(m=>({m,s:(frees.some(f=>f&&m[1].includes(f))?100:0)+Math.max(m[3]-m[2],0)*2-m[2]*0.05}))
+    .sort((a,b)=>b.s-a.s||a.m[2]-b.m[2])
+    .slice(0,24).map(x=>x.m);
+  let total=1,valid=1;
+  for(let k=1;k<=3;k++){
+    for(const c of combos(pool,k)){
+      total++;
+      const items=[...must,...c];
+      const sub=items.reduce((a,i)=>a+i[2],0);
+      if(budget&&sub>budget*1.25) continue;
+      const cand=mk(items);
+      if(budget&&cand.paid>budget) continue;
+      valid++;
+      if(cand.r>best.r+1e-9||(Math.abs(cand.r-best.r)<1e-9&&cand.paid<best.paid)) best=cand;
+    }
+  }
+  return {best,baseline,total,valid};
+}
+
+// ——— 预热台：活动日历 × 券到期 ———
+// 数据与 src/preheat.py 的脱敏样例一致；buildPreheat 保持纯函数，便于与 Python 端比对。
+const CAMPAIGNS=[
+ {date:"2026-10-09",title:"超值9.9元早餐两件套陪你开工啦",content:"10月8日至10月21日，凭券两件套只要9.9元"},
+ {date:"2026-10-09",title:"麦麦会员日 积分多倍",content:"会员日积分双倍累计"},
+ {date:"2026-10-16",title:"秋日限定新品上新",content:"季节新品限时尝鲜"},
+ {date:"2026-10-25",title:"周末欢乐桶限时回归",content:"周末限定分享桶"}
+];
+const COUPONS=[
+ {title:"免费香芋派",until:"2026.10.16 23:59"},
+ {title:"满30减5元券",until:"2026.10.12 23:59"},
+ {title:"免费中薯条",until:"2026.12.01 23:59"}
+];
+const POINTS=1320.1, REDEEM=[100,200,500,800,1600];
+const P_MISS=25,P_URGENT=10,P_NOCOUPON=20,B_RUNNING=5,B_POINTS=5,URGENT_DAYS=7;
+
+function pd(s){
+  if(!s) return null;
+  let t=String(s).trim().split(" ")[0].split("T")[0];
+  t=t.replace(/[月日号].*$/,"");
+  const p=t.split(/[.\-/年]/).filter(Boolean);
+  if(p.length<2) return null;
+  const n=p.slice(0,3).map(Number);
+  if(n.some(isNaN)) return null;
+  const y=p.length===2?new Date().getFullYear():n[0];
+  const m=p.length===2?n[0]:n[1], d=p.length===2?n[1]:n[2];
+  const dt=new Date(y,m-1,d);
+  return isNaN(dt.getTime())?null:dt;
+}
+function dayDiff(a,b){return Math.round((a.getTime()-b.getTime())/86400000);}
+
+function buildPreheat(todayISO){
+  const base=todayISO?new Date(todayISO+"T00:00:00"):new Date();
+  const today=new Date(base.getFullYear(),base.getMonth(),base.getDate());
+  let target=null,td=null; const running=[],upcoming=[];
+  for(const c of CAMPAIGNS){
+    const d=pd(c.date); if(!d) continue;
+    if(d.getTime()===today.getTime()) running.push(c);
+    else if(d.getTime()>today.getTime()){
+      upcoming.push(c);
+      if(!td||d.getTime()<td.getTime()){target=c;td=d;}
+    }
+  }
+  const cps=COUPONS.map(c=>{
+    const u=pd(c.until);
+    return {title:c.title,until:c.until,days:u?dayDiff(u,today):null,
+            survives:(u&&td)?(u.getTime()>=td.getTime()):null};
+  }).sort((a,b)=>(a.days===null?1e9:a.days)-(b.days===null?1e9:b.days));
+  const missing=cps.filter(w=>w.survives===false);
+  const surviving=cps.filter(w=>w.survives===true);
+  const urgent=cps.filter(w=>w.survives!==false&&w.days!==null&&w.days>=0&&w.days<=URGENT_DAYS);
+  const floor=Math.min.apply(null,REDEEM);
+  let score;
+  if(!target) score=Math.max(0,Math.min(100,80-P_URGENT*urgent.length));
+  else{
+    score=100-P_MISS*missing.length-P_URGENT*urgent.length;
+    if(!surviving.length) score-=P_NOCOUPON;
+    if(running.length) score+=B_RUNNING;
+    if(POINTS>=floor) score+=B_POINTS;
+    score=Math.max(0,Math.min(100,score));
+  }
+  score=Math.round(score);
+  const grade=score>=85?"S":score>=70?"A":score>=50?"B":"C";
+  const daysLeft=td?dayDiff(td,today):null;
+  let headline;
+  if(!target) headline=running.length?("「"+running[0].title+"」正在跑，暂时没有下一场可预热")
+                                     :"当前没有可预热的活动，先看住你手里的券";
+  else{
+    const d=daysLeft||0;
+    headline = d<=0 ? ("「"+target.title+"」就是今天，冲")
+      : missing.length ? ("距「"+target.title+"」还有 "+d+" 天，但你有 "+missing.length+" 张券等不到那天")
+      : d<=3 ? ("距「"+target.title+"」还有 "+d+" 天，券已就位")
+      : ("距「"+target.title+"」还有 "+d+" 天");
+  }
+  return {today:today,target:target,td:td,daysLeft:daysLeft,headline:headline,
+          running:running,upcoming:upcoming,cps:cps,missing:missing,surviving:surviving,
+          urgent:urgent,score:score,grade:grade,floor:floor,points:POINTS,
+          progress:daysLeft?Math.max(0,Math.min(1,1-daysLeft/30)):1};
+}
+
+const pick=document.getElementById("pick");
+let sel=[];
+MENU.forEach(m=>{
+  const b=document.createElement("button");
+  b.textContent=m[1]+" ¥"+m[2];
+  b.onclick=()=>{
+    const i=sel.indexOf(m[0]);
+    if(i>=0){sel.splice(i,1);b.classList.remove("on")}else{sel.push(m[0]);b.classList.add("on")}
+    document.getElementById("hint").textContent=
+      sel.length?("已选 "+sel.length+" 件："+sel.map(c=>MENU.find(m=>m[0]===c)[1]).join("、")):"已选 0 件";
+  };
+  pick.appendChild(b);
+});
+
+document.getElementById("go").onclick=()=>{
+  if(!sel.length){document.getElementById("hint").textContent="先选一样你想吃的 ↑";return}
+  const budget=parseFloat(document.getElementById("budget").value)||0;
+  const {best,baseline,total,valid}=solve(sel,budget);
+  const f=v=>String(Math.round(v*100)/100);
+  const grade=best.r>=.45?"S":best.r>=.30?"A":best.r>=.15?"B":"C";
+  document.getElementById("grade").textContent=grade;
+  document.getElementById("paid").textContent=f(best.paid);
+  document.getElementById("orig").textContent=f(best.orig);
+  document.getElementById("saveline").textContent=
+    "省下 ¥"+f(best.orig-best.paid)+" · "+(best.r*100).toFixed(1)+"%";
+  const dc=best.items.length-baseline.items.length;
+  const bavg=baseline.items.length?baseline.paid/baseline.items.length:0;
+  const oavg=best.items.length?best.paid/best.items.length:0;
+  document.getElementById("bpaid").textContent="¥"+f(baseline.paid);
+  document.getElementById("bsub").textContent=baseline.items.length+" 件 · 均价 ¥"+f(bavg);
+  document.getElementById("opaid").textContent="¥"+f(best.paid);
+  document.getElementById("osub").textContent=best.items.length+" 件 · 均价 ¥"+f(oavg);
+  const saved=baseline.paid-best.paid;
+  document.getElementById("verdict").innerHTML= saved>0
+    ? "同样的东西，白省 ¥"+f(saved)
+    : "多花 ¥"+f(-saved)+"，多得 "+dc+" 件 · 单件均价直降 "+Math.round((bavg-oavg)/bavg*100)+"%";
+  document.getElementById("items").innerHTML=
+    best.items.map(i=>"<div><span>"+i[1]+"</span><span class='gold'>¥"+f(i[2])+"</span></div>").join("");
+  document.getElementById("proc").innerHTML=
+    "本地枚举 <b>"+total+"</b> 种组合"+(budget?("，其中通过预算 "+valid+" 种"):"")+
+    " · 按券规则剪枝后取 Top 30 送官方验价<br>口径：本页为脱敏样例数据的演算，实付以麦当劳官方为准";
+  const r=document.getElementById("res");
+  r.classList.remove("show"); void r.offsetWidth; r.classList.add("show");
+  r.scrollIntoView({behavior:"smooth",block:"nearest"});
+};
+
+// ——— 预热台渲染：实时秒级倒计时 ———
+const PH=buildPreheat();
+const GCOLOR={S:"#FFC72C",A:"#17C3A2",B:"#4D7CFE",C:"#98938B"};
+(function(){
+  const t=document.getElementById("phTitle");
+  if(!t) return;
+  t.textContent=PH.headline;
+  document.getElementById("phBar").style.width=Math.round(PH.progress*100)+"%";
+  const gw={S:"弹药充足，稳了",A:"大体就绪，还能补",B:"有缺口，先看冲突",C:"裸奔进场，建议先清券"};
+  document.getElementById("phScore").innerHTML=
+    "备战度 <span class='ph-grade' style='background:"+GCOLOR[PH.grade]+"'>"
+    +PH.grade+"</span> "+PH.score+"/100 · "+gw[PH.grade]
+    +" ｜ 可用积分 "+PH.points+"（够兑 "+REDEEM.filter(p=>PH.points>=p).length+" 件）";
+
+  const row=w=>{
+    const left=w.days===null?"—":(w.days<0?"已过期":w.days+" 天后");
+    const tight=w.survives===true&&w.days!==null&&w.days>=0&&w.days<=URGENT_DAYS;
+    return "<div class='ph-row'><span class='ph-tag"+(w.survives===false?" bad":"")+"'>"
+      +(w.survives===false?"✕":"✓")+"</span><span>"+w.title
+      +" <span style='color:#98938B;font-size:12.5px'>· "+left+" · "+w.until+"</span>"
+      +(tight?" <span style='color:#FFC72C;font-size:12.5px'>· 压线</span>":"")
+      +"</span></div>";
+  };
+  let html="";
+  if(PH.missing.length){
+    html+="<div class='ph-conflict'><b>⚠️ 等不到那天的券</b>"
+      +PH.missing.map(row).join("")
+      +"<div style='margin-top:8px'>这些券会在活动开始前作废——先用掉，"
+      +"别留给一场赶不上的活动。</div></div>";
+  }
+  const rest=PH.cps.filter(w=>w.survives!==false);
+  if(rest.length) html+="<div style='margin-top:12px'>"+rest.map(row).join("")+"</div>";
+  document.getElementById("phList").innerHTML=html;
+
+  function tick(){
+    if(!PH.td){
+      for(const id of ["phD","phH","phM","phS"]) document.getElementById(id).textContent="--";
+      return;
+    }
+    let ms=PH.td.getTime()-Date.now();
+    if(ms<0) ms=0;
+    const s=Math.floor(ms/1000);
+    document.getElementById("phD").textContent=Math.floor(s/86400);
+    document.getElementById("phH").textContent=Math.floor(s%86400/3600);
+    document.getElementById("phM").textContent=Math.floor(s%3600/60);
+    document.getElementById("phS").textContent=s%60;
+  }
+  tick(); setInterval(tick,1000);
+})();
+</script>
+</body>
+</html>

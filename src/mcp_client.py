@@ -8,6 +8,7 @@ from __future__ import annotations
 import itertools
 import json
 import os
+import threading
 from typing import Any
 
 import requests
@@ -35,6 +36,8 @@ class McdMcpClient:
         self._ids = itertools.count(1)
         # 调用日志：每次 call_tool 记录 {name, ok, error}，供「工具覆盖清单」使用
         self.calls: list[dict[str, Any]] = []
+        # McSolve 会并发验价（多个线程同时 call_tool），id 生成与调用日志必须加锁
+        self._lock = threading.Lock()
 
     # ------------------------------------------------------------------ #
     # 底层协议
@@ -53,15 +56,21 @@ class McdMcpClient:
         try:
             data = self._call_tool_once(name, arguments)
         except Exception as exc:  # noqa: BLE001 —— 记录失败后继续抛出
-            self.calls.append({"name": name, "ok": False, "error": str(exc)})
+            with self._lock:
+                self.calls.append({"name": name, "ok": False, "error": str(exc)})
             raise
-        self.calls.append({"name": name, "ok": True, "error": ""})
+        with self._lock:
+            self.calls.append({"name": name, "ok": True, "error": ""})
         return data
+
+    def _next_id(self) -> int:
+        with self._lock:
+            return next(self._ids)
 
     def _call_tool_once(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
         payload = {
             "jsonrpc": "2.0",
-            "id": next(self._ids),
+            "id": self._next_id(),
             "method": "tools/call",
             "params": {"name": name, "arguments": arguments or {}},
         }
