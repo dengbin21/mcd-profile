@@ -16,6 +16,9 @@
 
 ⭐ **觉得有意思？给个 Star 就是最大的支持 → [github.com/dengbin21/mcd-profile](https://github.com/dengbin21/mcd-profile)**
 
+🚀 **不想装环境？直接在线玩 → [mcsolve.app.workbuddy.host](https://mcsolve.app.workbuddy.host/)**
+（免登录、免 Token：页面里就能跑求解器和活动倒计时，用的是脱敏样例数据）
+
 ## 招牌玩法 · 麦麦最优解（McSolve）
 
 > **说一句你想吃什么，它替你把「这一单怎么点最划算」算出来——
