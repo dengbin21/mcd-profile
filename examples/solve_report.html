@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>麦麦最优解 · McSolve</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0B0A08;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;color:#F6F4EF}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 24px 40px}
+
+.sec{margin-top:20px;border-radius:22px;padding:24px 22px;background:#12100C;
+  border:1px solid rgba(255,255,255,.07)}
+.h{font-size:14px;letter-spacing:.18em;color:#98938B;margin-bottom:16px}
+
+.list{margin-top:12px;list-style:none}
+.list li{padding:9px 0;border-bottom:1px solid rgba(255,255,255,.06);
+  font-size:15px;line-height:1.5}
+.list li:last-child{border-bottom:0}
+
+.chips{display:flex;flex-wrap:wrap;gap:9px}
+.chip{padding:7px 13px;border-radius:999px;background:rgba(255,199,44,.12);
+  color:#FFE38A;font-size:14px}
+.chip.dim{background:rgba(255,255,255,.06);color:#98938B}
+
+.badge{width:76px;height:76px;border-radius:21px;display:flex;align-items:center;
+  justify-content:center;font-size:42px;font-weight:800;color:#171205}
+.stats{display:flex;gap:14px;text-align:center}
+.stat{flex:1;background:#1A1710;border-radius:16px;padding:16px 10px}
+.snum{font-size:26px;font-weight:800;color:#FFC72C}
+.slab{font-size:12px;color:#98938B;margin-top:6px;line-height:1.5}
+
+.note{margin-top:14px;padding:10px 14px;border-radius:12px;font-size:13px;
+  line-height:1.7;background:rgba(255,199,44,.08);
+  border:1px solid rgba(255,199,44,.22);color:#E8C86A}
+.warn{margin-top:10px;font-size:12px;color:#8A6A2E}
+
+.foot{margin-top:22px;text-align:center;font-size:13px;color:#7C766D;line-height:1.9}
+.cta{margin-top:14px;text-align:center;font-size:16px;font-weight:700;color:#FFC72C}
+
+.hero{position:relative;border-radius:28px;padding:34px 28px 30px;background:#171205;
+  border:1px solid rgba(255,199,44,.22);overflow:hidden}
+.hero::after{content:"";position:absolute;right:-70px;top:-70px;width:230px;height:230px;
+  border-radius:50%;background:rgba(255,199,44,.10)}
+.kicker{font-size:15px;letter-spacing:.22em;color:#FFE38A}
+.title{font-size:40px;font-weight:800;margin-top:10px;letter-spacing:.02em}
+.sub{font-size:15px;color:#98938B;margin-top:8px}
+.grade{margin-top:22px;display:flex;align-items:center;gap:14px}
+.gword{font-size:19px;font-weight:700}
+.gnote{font-size:13px;color:#98938B;margin-top:3px}
+.hline{margin-top:14px;font-size:18px;font-weight:700;color:#FFE38A;line-height:1.5}
+.paidrow{margin-top:26px;display:flex;align-items:flex-end;gap:12px}
+.paid{font-size:76px;font-weight:800;line-height:1;color:#FFC72C}
+.cur{font-size:26px;font-weight:700;color:#FFC72C;margin-bottom:10px}
+.strike{font-size:20px;color:#98938B;text-decoration:line-through;margin-bottom:12px}
+.save{margin-top:14px;display:inline-block;padding:8px 16px;border-radius:999px;
+  background:rgba(255,199,44,.14);color:#FFE38A;font-size:17px;font-weight:700}
+.item{display:flex;justify-content:space-between;align-items:center;padding:11px 0;
+  border-bottom:1px dashed rgba(255,255,255,.08);font-size:17px}
+.item:last-child{border-bottom:none}
+.iname{color:#F6F4EF}
+.iprice{color:#FFE38A;font-weight:700}
+.vs{display:flex;gap:14px}
+.vscol{flex:1;border-radius:18px;padding:18px 16px;background:#1A1710;text-align:center}
+.vslab{font-size:13px;color:#98938B}
+.vsnum{font-size:30px;font-weight:800;margin-top:8px}
+.vsnum.dim{color:#98938B}
+.vsnum.hot{color:#FFC72C}
+.vssub{font-size:12px;color:#98938B;margin-top:7px}
+.vsfoot{margin-top:18px;text-align:center;font-size:19px;font-weight:800;color:#17C3A2;line-height:1.6}
+.vsnote{margin-top:12px;padding:10px 14px;border-radius:12px;font-size:12px;line-height:1.7;
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);color:#98938B}
+.nut{display:flex;gap:14px;text-align:center}
+.nutc{flex:1;background:#1A1710;border-radius:16px;padding:14px 8px}
+.nnum{font-size:22px;font-weight:800}
+.nlab{font-size:12px;color:#98938B;margin-top:5px}
+</style></head>
+<body><div class="wrap">
+
+<div class="hero">
+  <div class="kicker">M C S O L V E</div>
+  <div class="title">麦麦最优解</div>
+  <div class='sub'>（脱敏）示例门店</div>
+  
+  <div class="grade">
+    <div class="badge" style="background:#17C3A2">A</div>
+    <div>
+      <div class="gword">省得很体面</div>
+      <div class="gnote">官方接口验过价的最低组合</div>
+    </div>
+  </div>
+  <div class="paidrow">
+    <span class="cur">¥</span><span class="paid">31.5</span>
+    <span class="strike">¥52.5</span>
+  </div>
+  <div class="save">官方优惠 ¥21 · 折扣力度 40.0%</div>
+</div>
+
+<div class="sec">
+  <div class="h">这一单点什么</div>
+  <div class='item'><span class='iname'>板烧鸡腿堡</span><span class='iprice'>¥21.5</span></div><div class='item'><span class='iname'>巨无霸</span><span class='iprice'>¥24</span></div><div class='item'><span class='iname'>脆香油条</span><span class='iprice'>¥7</span></div>
+</div>
+
+<div class='sec'><div class='h'>你的直觉点法 vs 算法最优解</div><div class='vs'><div class='vscol'><div class='vslab'>直觉点法 · 2 件</div><div class='vsnum dim'>¥40.5</div><div class='vssub'>均价 ¥20.25</div></div><div class='vscol'><div class='vslab'>算法最优解 · 3 件</div><div class='vsnum hot'>¥31.5</div><div class='vssub'>均价 ¥10.5</div></div></div><div class='vsfoot'>同样的东西，白省 ¥9</div></div>
+<div class='sec'><div class='h'>求解过程</div><div class='stats'><div class='stat'><div class='snum'>2325</div><div class='slab'>本地枚举<br>候选组合</div></div><div class='stat'><div class='snum'>3</div><div class='slab'>官方验价<br>calculate-price</div></div><div class='stat'><div class='snum'>40%</div><div class='slab'>折扣力度</div></div></div></div>
+<div class='sec'><div class='h'>参考的券规则</div><div class='chips'><span class='chip'>免费香芋派</span><span class='chip'>满30减5元券</span><span class='chip'>免费中薯条</span><span class='chip'>三件任选6折</span><span class='chip'>免费脆薯饼</span><span class='chip'>中薯条买一送一</span><span class='chip dim'>另有 1 张券无法自动解析</span></div></div>
+<div class='sec'><div class='h'>这一单的营养</div><div class='nut'><div class='nutc'><div class='nnum'>1106</div><div class='nlab'>千卡</div></div><div class='nutc'><div class='nnum'>55g</div><div class='nlab'>蛋白</div></div><div class='nutc'><div class='nnum'>55g</div><div class='nlab'>脂肪</div></div><div class='nutc'><div class='nnum'>2232mg</div><div class='nlab'>钠</div></div></div></div>
+
+<div class="cta">我也想算算我的 → https://github.com/dengbin21/mcd-profile</div>
+<div class='warn'>演示模式：价格为脱敏样例数据的本地估算，非官方实时报价。</div>
+<div class="foot">
+  价格来自麦当劳官方 MCP &lt;code&gt;calculate-price&lt;/code&gt;，全程只读、不产生订单<br>
+  营养值仅供复盘参考，不构成营养建议
+</div>
+
+</div></body></html>
