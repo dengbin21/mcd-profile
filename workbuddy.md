@@ -28,7 +28,7 @@
      `orderProductList[].comboItemList[]`（套餐成分拆解）。
    - `query-my-account` → 积分账户（可用 1320.1 / 累计 34703.1）。
    - `query-my-coupons` / `query-my-prizes` / `mall-order-list` → 券、奖品、商城订单均可用。
-   - 进一步把订单域扩展到 **权益 / 商城 / 场景 / 营销 / 营养** 五大域，合计锁定
+   - 进一步把订单域扩展到 **权益 / 商城 / 场景 / 营销 / 营养**（合订单共六域），合计锁定
      **20 个只读工具**（门店、地址、菜单、常点、门店券、算价、活动日历、服务器时间、营养库…）。
    - 结论：**数据够厚，足以支撑一个「复盘」产品**；约束是 `order-list` 无分页（约 10 单）。
 
@@ -57,7 +57,7 @@
    - `src/textpack.py`：**文案层（WorkBuddy 在环）**——文本注册表（除数值外全部文字的单一事实源）+ `brief` 导出素材 → 模型写 `copy_pack.json` → `--copy` 注入，覆盖人格称号、区块标题、指标名、雷达维度、徽章名等；无外部 Key。
    - `src/report/`：Markdown 档案 + **暗黑潮酷** HTML / **竖版长图** PNG + 工具覆盖清单。
    - `src/archive.py`：采集→分析→人格聚合（可并入**本次战报**）。
-   - `src/cli.py`：命令行入口（archive / orders / savings / account / campaign / store / tools / demo / **brief** / **stores / menu / eat**）。
+   - `src/cli.py`：命令行入口，共 15 个子命令（archive / orders / savings / account / campaign / store / tools / card / demo / brief / stores / menu / eat / **preheat** / **solve**）。
 
 5. **工程打磨**
    - **套餐口径**：发现订单里既有单品也有套餐，遂按 `comboItemList` **拆件计营养**，
@@ -76,7 +76,7 @@
      `src/images.py` 把商品图**内嵌**进分享卡——HTML 转 `data:` URI **单文件自包含**（脱网可见），
      PNG 用 matplotlib `imshow` 嵌图；**缺图/断网一律优雅降级回纯文字**。
    - **可视化点餐（回应「交互看不到图」）**：终端与选择卡片渲染不了图片，遂把菜单渲染成网页
-     （`src/menu_view.py` / `menu` 子命令）——117 款商品图+价+折扣、类目筛选、搜索、点选购物车，
+     （`src/menu_view.py` / `menu` 子命令）——菜单（样例数据 47 款）商品图+价+折扣、类目筛选、搜索、点选购物车，
      底部实时汇总，一键复制**点餐话术**粘贴回对话即可点单（也可复制 `code:qty` 喂给 `eat --items ...`）。
    - **文案层（WorkBuddy 在环）**：视觉结构走规则（可复现），**除数值外的全部文字**可交给
      WorkBuddy 生成——`brief` 导出素材 + 全部文字默认值 + 输出 schema，WorkBuddy 产出
@@ -148,7 +148,7 @@ python -m src.cli --offline brief --for solve      # 或 --for preheat / --for a
 python -m src.cli --offline solve --items 板烧鸡腿堡 --copy copy_pack_solve.json
 #   → 键名写错 / 丢占位符 / 编数字 三类错误会被逐条打印并自动回退默认文案
 
-# 全量测试（87 项）
+# 全量测试（103 项）
 python -m pytest tests/ -q
 ```
 
@@ -192,9 +192,8 @@ python -m pytest tests/ -q
 
 ### 4. 文案层：把硬编码文字全部交还给 WorkBuddy
 
-- 用户要求「文案不要代码写死，充分利用大模型的能力」，于是把 solve（66 条）、
-  preheat（48 条）硬编码文案**全量外置**到 `src/textpack.py` 的 `TEXT_REGISTRY`
-  （`sv.*` 53 键 / `ph.*` 42 键），并新增 `brief --for archive|solve|preheat` 导出素材。
+- 用户要求「文案不要代码写死，充分利用大模型的能力」，于是把 solve / preheat 的硬编码文案**全量外置**到 `src/textpack.py` 的 `TEXT_REGISTRY`
+  （`sv.*` 53 键 / `ph.*` 67 键），并新增 `brief --for archive|solve|preheat` 导出素材。
 - 原则：**模型只改文字，数值永不出自模型**。
 - 但端到端实测发现护栏有两个**静默放行**的洞，已补齐为三道（出错条目**真回退**默认文案）：
   1. 键名写错（`sv.hero_title`）→ 静默失效无提示 → 现在告警 + 用编辑距离**猜相近键**；
@@ -210,7 +209,7 @@ python -m pytest tests/ -q
 - `site/index.html`：**零门槛落地页**，免登录免 Token 即可玩求解器与实时倒计时；
   用 `tests/test_site_parity.py`（抽取页面内联 JS 与 Python 比对）防止两份实现漂移。
 - 已发布上线：**https://mcsolve.app.workbuddy.host/**
-- 测试从 59 → 87 项，全绿；`git` 已推送到 `dengbin21/mcd-profile`。
+- 测试从 59 → 103 项，全绿；`git` 已推送到 `dengbin21/mcd-profile`。
 
 ## 五、小结
 

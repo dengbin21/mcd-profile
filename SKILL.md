@@ -235,4 +235,4 @@ python -m src.cli preheat --copy copy_pack_preheat.json
 
 子命令共 15 个：`archive` `orders` `savings` `account` `campaign` `store` `tools` `card`
 `demo` `brief` `stores` `menu` `eat` `preheat` `solve`（`demo` / `--offline` 跑脱敏样例数据）。
-跑完任一条都会给**下一步建议**（preheat → solve → eat → archive → preheat 闭环）。
+闭环上的四个入口（`preheat` / `solve` / `eat` / `archive`）跑完会给**下一步建议**。

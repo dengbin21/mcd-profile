@@ -294,10 +294,13 @@ curl -sS -X POST https://mcp.mcd.cn -H 'Content-Type: application/json' \
 | 交易（写） | `cancel-order`、`mall-create-order`、`party-order-create` | 复盘产品不发起取消/代下单（`create-order` 例外，见 §2.1，默认关闭） |
 | 权益（写） | `auto-bind-coupons`、`draw-lottery` | 不替用户领券/抽奖，避免误操作 |
 | 地址（写） | `delivery-create-address` | 不改动用户地址簿 |
-| 团餐专用 | `query-promotions`、`query-meal-assistance`、`query-meal-detail`(团餐口径) | 仅企业团餐（`beType=6`）场景，个人档案不适用 |
+| 团餐专用 | `query-promotions`、`query-meal-assistance` | 仅企业团餐（`beType=6`）场景，个人档案不适用 |
 | 派对（深层） | `query-party-city/-store/-date/-session` | 属「活动策划」而非「事后复盘」，本作品不纳入主链路 |
 
 > 这些工具在需要时可作为独立功能扩展，但不应混进「档案复盘」的只读语义中。
+>
+> 注：`query-meal-detail` 不在此列——它虽与团餐相关，但本作品在**个人场景**用它补全
+> 常点餐品的名称与套餐组成（`src/sources.py`、`src/ordering.py`），属于已使用的 20 个只读工具之一。
 
 ## 8. 写操作安全护栏
 

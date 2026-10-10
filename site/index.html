@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>麦麦最优解 · McSolve —— 先帮你算出最划算的一单，再帮你复盘吃过的每一单</title>
-<meta name="description" content="把麦当劳官方 MCP 的 calculate-price 当价格预言机反复调用，穷举出这一单怎么点最划算。全程只读、不产生订单。">
+<meta name="description" content="麦麦最优解：把麦当劳官方 MCP 的 calculate-price 当价格预言机反复调用，穷举出这一单怎么点最划算。全程只读、不产生订单。本页为脱敏样例的纯前端演算，联网跑命令行工具才会真的调官方接口验价。">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0B0A08;color:#F6F4EF;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7;-webkit-font-smoothing:antialiased}
@@ -98,10 +98,13 @@ td b{color:#FFC72C}
   <p class="lede">把麦当劳官方 MCP 的 <code>calculate-price</code> 当<b class="gold">价格预言机</b>反复调用：<br>
   穷举上千种组合，逐一让官方接口验价，挑出这一单<b class="gold">最划算</b>的买法。<br>
   全程只读——不领券、不抽奖、<b class="gold">不产生任何订单</b>。</p>
+  <p class="muted" style="margin-top:10px">下面这台求解器用的是<b class="gold">脱敏样例数据 + 纯前端演算</b>，
+  券规则、枚举与省钱率口径和命令行工具<b>完全一致</b>，但<b>不发任何请求</b>——
+  要真的让官方接口逐单验价，请联网跑 CLI（见页尾）。</p>
   <div class="stats">
     <div class="stat"><b>2325</b><span>本地枚举组合</span></div>
-    <div class="stat"><b>30</b><span>官方验价次数</span></div>
     <div class="stat"><b>40%</b><span>最优解省钱率</span></div>
+    <div class="stat"><b>0</b><span>本页接口调用（纯前端）</span></div>
   </div>
   <a class="btn" href="https://github.com/dengbin21/mcd-profile">在 GitHub 上 Star 一下</a>
 </div>
@@ -165,7 +168,8 @@ td b{color:#FFC72C}
 
 <div class="sec">
   <h2>它到底在算什么</h2>
-  <p class="muted">真实运行时，终端会这么跑（下面这段是脱样例数据实跑的输出）：</p>
+  <p class="muted">联网跑命令行工具时，终端会这么跑（下面是真实账号实跑的输出，
+  因此券数与本页演算用的脱敏样例并不相同）：</p>
   <div class="log">菜单 47 款 ｜ 券 8 张（可解析规则 6 条）
 必选：板烧鸡腿堡
 正在搜索最优组合（最多追加 3 件）…
@@ -469,14 +473,19 @@ document.getElementById("go").onclick=()=>{
   document.getElementById("opaid").textContent="¥"+f(best.paid);
   document.getElementById("osub").textContent=best.items.length+" 件 · 均价 ¥"+f(oavg);
   const saved=baseline.paid-best.paid;
+  // 单件均价为 0（如必选商品被免费券全额抵扣）时不能算降幅，否则会渲染出「直降 NaN%」
+  const drop=(bavg>0&&oavg>0)?Math.round((bavg-oavg)/bavg*100):0;
   document.getElementById("verdict").innerHTML= saved>0
     ? "同样的东西，白省 ¥"+f(saved)
-    : "多花 ¥"+f(-saved)+"，多得 "+dc+" 件 · 单件均价直降 "+Math.round((bavg-oavg)/bavg*100)+"%";
+    : (drop>0 ? "多花 ¥"+f(-saved)+"，多得 "+dc+" 件 · 单件均价直降 "+drop+"%"
+              : "多花 ¥"+f(-saved)+"，多得 "+dc+" 件");
   document.getElementById("items").innerHTML=
     best.items.map(i=>"<div><span>"+i[1]+"</span><span class='gold'>¥"+f(i[2])+"</span></div>").join("");
   document.getElementById("proc").innerHTML=
     "本地枚举 <b>"+total+"</b> 种组合"+(budget?("，其中通过预算 "+valid+" 种"):"")+
-    " · 按券规则剪枝后取 Top 30 送官方验价<br>口径：本页为脱敏样例数据的演算，实付以麦当劳官方为准";
+    " · 纯前端演算，<b>未调用任何接口</b><br>"
+    + "口径：本页为脱敏样例数据的演算，实付以麦当劳官方为准；"
+    + "要真的让官方 <code>calculate-price</code> 逐单验价，请联网跑命令行工具";
   const r=document.getElementById("res");
   r.classList.remove("show"); void r.offsetWidth; r.classList.add("show");
   r.scrollIntoView({behavior:"smooth",block:"nearest"});

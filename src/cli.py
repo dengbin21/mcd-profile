@@ -759,6 +759,14 @@ def cmd_eat(args):
     print()
     print(render_markdown(a, copy))
 
+    # 点餐不是终点：下单了就回到「吃之后」复盘，只预览的话先去算这一单怎么点最划算
+    if placed:
+        _next_step("这一单已入账——跑 `python -m src.cli archive` 把它变成六维复盘 + 麦门人格卡",
+                   "再看下一场活动你的券够不够：`python -m src.cli preheat`")
+    else:
+        _next_step("先算这一单怎么点最划算：`python -m src.cli solve --items <你想吃的东西>`",
+                   "算完回来 `python -m src.cli eat --items <最优解>` 照着点")
+
 
 def _pick_items_interactive(menu) -> list[CartItem] | None:
     """交互选餐：打印整份菜单，按序号点选并逐个问数量。"""
