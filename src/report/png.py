@@ -27,6 +27,23 @@ _EMOJI_RE = re.compile(
     "[\U0001F000-\U0001FAFF\U00002600-\U000027BF\U00002B00-\U00002BFF\U0000FE0F]"
 )
 
+# 跨平台 CJK 字体候选（按常见度排序）；渲染前探测本机实际注册的字体，
+# 避免写死某平台字体导致中文退化成方框（DejaVu Sans 无 CJK 字形）。
+_CJK_CANDIDATES = (
+    "PingFang SC", "Hiragino Sans GB", "Hiragino Sans CNS", "Noto Sans CJK SC",
+    "Noto Sans CJK JP", "Source Han Sans SC", "WenQuanYi Zen Hei",
+    "Microsoft YaHei", "SimHei", "Songti SC", "STHeiti", "Heiti SC",
+    "Kaiti SC", "Arial Unicode MS",
+)
+
+
+def _cjk_sans_serif() -> list[str]:
+    """返回当前 matplotlib 已注册的 CJK 字体名；全部缺失时兜底 DejaVu Sans。"""
+    from matplotlib import font_manager as _fm
+    available = {f.name for f in _fm.fontManager.ttflist}
+    found = [c for c in _CJK_CANDIDATES if c in available]
+    return found or ["DejaVu Sans"]
+
 
 def _png_plain(s: str) -> str:
     """PNG 渲染用：剥离 emoji 与变体选择符（matplotlib 无彩色 emoji 字体）。"""
@@ -56,10 +73,10 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
     except Exception:  # noqa: BLE001
         return None
 
-    plt.rcParams["font.sans-serif"] = [
-        "Noto Sans CJK SC", "Noto Sans CJK JP", "WenQuanYi Zen Hei",
-        "PingFang SC", "Microsoft YaHei", "SimHei", "DejaVu Sans",
-    ]
+    fonts = _cjk_sans_serif()
+    if "DejaVu Sans" not in fonts:      # CJK 全缺时已兜底，避免重复
+        fonts.append("DejaVu Sans")
+    plt.rcParams["font.sans-serif"] = fonts
     plt.rcParams["axes.unicode_minus"] = False
 
     c, h, b, p = a.consumption, a.health, a.benefit, a.persona

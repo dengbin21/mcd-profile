@@ -328,6 +328,31 @@ def test_quote_mismatch_guard():
     assert q.mismatches == [("1440", "酥酥多笋卷三件套", "麦辣鸡腿汉堡")]
 
 
+def test_png_cjk_font():
+    """PNG 分享卡：CJK 字体探测应命中真实注册字体，渲染不报错且产出有效文件。"""
+    import tempfile
+    from matplotlib import font_manager
+
+    from src.report.png import _cjk_sans_serif, render_card_png
+
+    fonts = _cjk_sans_serif()
+    assert fonts, "CJK 字体探测不应为空"
+    # 探测出的字体必须真实注册在 matplotlib
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    assert fonts[0] in available, f"{fonts[0]} 应已注册"
+    # 若系统确有 CJK 字体（非 DejaVu 兜底），findfont 不应退回 DejaVu Sans
+    if fonts != ["DejaVu Sans"]:
+        from matplotlib.font_manager import FontProperties, findfont
+        resolved = findfont(FontProperties(family=fonts[0]))
+        assert "DejaVuSans" not in resolved, "应命中真实 CJK 字体而非 DejaVu 兜底"
+    # 真实渲染一张 demo 卡片：不抛异常、文件存在且有内容
+    a = build_archive(None, use_remote=False)
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "card.png"
+        ok = render_card_png(a, out)
+        assert ok is not None and out.exists() and out.stat().st_size > 10_000
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
