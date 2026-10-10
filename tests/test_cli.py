@@ -192,33 +192,36 @@ def test_tools_offline_lists_the_whole_plan():
 # ---------------------------------------------------------------------- #
 # 5. Token 配置（别人要用这个 Skill，第一步就是配它，配错会静默 401）
 # ---------------------------------------------------------------------- #
-def test_env_token_beats_everything(monkeypatch, tmp_path):
-    """环境变量优先级最高：CLI 里写得再真也不能盖过 env。"""
+def test_env_token_beats_everything(monkeypatch):
+    """环境变量优先级最高：配置文件里写得再真也不能盖过 env。"""
     monkeypatch.setenv("MCD_MCP_TOKEN", "FROM_ENV")
-    monkeypatch.setattr(cli, "ROOT", tmp_path)
-    _write_cfg(tmp_path / "mcp-config.local.json", "FROM_FILE")
-    assert cli._env_token() == "FROM_ENV"
-    assert cli._client(argparse.Namespace(token=None)).token == "FROM_ENV"
+    with tempfile.TemporaryDirectory() as d:
+        monkeypatch.setattr(cli, "ROOT", Path(d))
+        _write_cfg(Path(d) / "mcp-config.local.json", "FROM_FILE")
+        assert cli._env_token() == "FROM_ENV"
+        assert cli._client(argparse.Namespace(token=None)).token == "FROM_ENV"
 
 
-def test_local_config_wins_over_example(monkeypatch, tmp_path):
+def test_local_config_wins_over_example(monkeypatch):
     """`mcp-config.local.json`（已 gitignore）应优先于模板文件。"""
     monkeypatch.delenv("MCD_MCP_TOKEN", raising=False)
-    monkeypatch.setattr(Path, "home", lambda: tmp_path / "nohome")   # 排除本机真实配置
-    monkeypatch.setattr(cli, "ROOT", tmp_path)
-    _write_cfg(tmp_path / "mcp-config.local.json", "FROM_LOCAL")
-    _write_cfg(tmp_path / "mcp-config.example.json", "FROM_EXAMPLE")
-    assert cli._token_from_config() == "FROM_LOCAL"
+    with tempfile.TemporaryDirectory() as d:
+        monkeypatch.setattr(Path, "home", lambda: Path(d) / "nohome")  # 排除本机真实配置
+        monkeypatch.setattr(cli, "ROOT", Path(d))
+        _write_cfg(Path(d) / "mcp-config.local.json", "FROM_LOCAL")
+        _write_cfg(Path(d) / "mcp-config.example.json", "FROM_EXAMPLE")
+        assert cli._token_from_config() == "FROM_LOCAL"
 
 
-def test_placeholder_is_never_used_as_token(monkeypatch, tmp_path):
+def test_placeholder_is_never_used_as_token(monkeypatch):
     """`Bearer ${MCD_MCP_TOKEN}` 是占位符：没设环境变量时不能把它当 Token 发出去，
     否则会以字面量进 Authorization 头，换来一个看不懂的 401。"""
     monkeypatch.delenv("MCD_MCP_TOKEN", raising=False)
-    monkeypatch.setattr(Path, "home", lambda: tmp_path / "nohome")
-    monkeypatch.setattr(cli, "ROOT", tmp_path)
-    _write_cfg(tmp_path / "mcp-config.example.json", "${MCD_MCP_TOKEN}")
-    assert cli._token_from_config() is None
+    with tempfile.TemporaryDirectory() as d:
+        monkeypatch.setattr(Path, "home", lambda: Path(d) / "nohome")
+        monkeypatch.setattr(cli, "ROOT", Path(d))
+        _write_cfg(Path(d) / "mcp-config.example.json", "${MCD_MCP_TOKEN}")
+        assert cli._token_from_config() is None
 
 
 def _write_cfg(path: Path, token: str) -> None:

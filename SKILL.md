@@ -1,6 +1,6 @@
 ---
 name: mcd-profile
-version: 2.0.0
+version: 2.0.1
 display_name: "麦麦档案"
 display_name_en: "McProfile"
 description: "围绕麦当劳官方 MCP 的一套「吃之前 → 吃之后」闭环：McSolve 先用官方 calculate-price 反复验价，算出这一单怎么点最划算（全程只读、不产生订单）；McPreheat 把活动日历和券到期日交叉，告诉你哪些券等不到活动那天；吃完再用 archive 把每一单变成『消费 × 省钱 × 健康 × 权益』复盘 + 麦门人格卡。用于『这单怎么点最划算 / 我的券什么时候到期、赶得上活动吗 / 我在麦当劳花了/省了多少、吃了多少热量 / 我的麦门人格 / 帮我点一份』等场景。依赖 mcd-mcp MCP 服务，覆盖官方 20 个只读工具 +（可选、默认关闭）1 个下单工具。"
@@ -17,31 +17,31 @@ license: MIT
 - **吃之后 · archive**：把每一单翻译成看得懂、晒得出的**六维复盘 + 麦门人格卡**；
 - **（可选）点餐闭环**：默认 dry-run，须显式确认才会真正下单。
 
-所有数据均通过 **`mcd-mcp` MCP 服务** 获取（见 `mcp-config.example.json`）。
+所有数据均通过 **`mcd-mcp` MCP 服务** 获取，宿主 agent 直连即可，**不需要 clone 仓库**。
 除数值外的**全部展示文字**可由 **WorkBuddy（宿主 agent）** 生成，无需任何外部模型 Key。
 
-🚀 **零门槛体验**：https://mcsolve.app.workbuddy.host/ （免登录、免 Token，页面里就能跑求解器与倒计时）
 ⭐ **仓库**：https://github.com/dengbin21/mcd-profile
 
 ## 何时触发
 
 | 用户说 | 走哪条 |
 |---|---|
-| 「这单怎么点最划算」「帮我算算买什么最省」「我想吃 X，怎么点」 | **McSolve** → `solve` |
-| 「我的券什么时候到期」「下周活动我的券还能用吗」「帮我备战」 | **McPreheat** → `preheat` |
-| 「我在麦当劳花了/省了多少钱」「吃了多少热量」「我的麦门人格」 | 档案 → `archive` |
-| 「我常去哪家店、常点什么」「最近有什么活动」 | 档案 → `savings` / `campaign` |
-| 「帮我点一份…」 | 点餐闭环 → `eat`（默认 dry-run，须显式确认） |
+| 「这单怎么点最划算」「帮我算算买什么最省」「我想吃 X，怎么点」 | **McSolve**（`query-meals` + `calculate-price` ×N） |
+| 「我的券什么时候到期」「下周活动我的券还能用吗」「帮我备战」 | **McPreheat**（`campaign-calendar` × `query-my-coupons`） |
+| 「我在麦当劳花了/省了多少钱」「吃了多少热量」「我的麦门人格」 | 档案复盘（`order-list` → 六维画像） |
+| 「我常去哪家店、常点什么」「最近有什么活动」 | 档案 · 省钱 / 活动 |
+| 「帮我点一份…」 | 点餐闭环（默认 dry-run，须显式确认） |
 
 **优先级**：用户问「怎么点/怎么买/划算吗」时**先给 McSolve**，不要用 `archive` 的省钱复盘去回答——
 后者是历史统计，前者才是「这一单」的答案。
 
-## 环境准备：拿到并配置 Token
+## 环境准备：只做一件事，配 `mcd-mcp`
 
-Token 来自麦当劳开放平台 **https://open.mcd.cn/mcp** ，按你的用法二选一：
+用这个 Skill 的**唯一前置条件**就是让宿主能连上麦当劳官方 MCP——不需要 clone 仓库、
+不需要装依赖、不需要配任何模型 Key。
 
-**用法 A · 在 MCP 客户端里当 Skill 用（推荐）**——由宿主 agent 直连 `mcd-mcp`，本项目不碰 Token。
-在客户端的 MCP 配置里加一条（以 WorkBuddy 的 `~/.workbuddy/mcp.json` 为例）：
+1. 到 **https://open.mcd.cn/mcp** 申请 Token；
+2. 在 MCP 客户端的配置里加一条（以 WorkBuddy 的 `~/.workbuddy/mcp.json` 为例）：
 
 ```json
 {
@@ -55,23 +55,11 @@ Token 来自麦当劳开放平台 **https://open.mcd.cn/mcp** ，按你的用法
 }
 ```
 
-⚠️ **别照抄 `mcp-config.example.json` 的 `Bearer ${MCD_MCP_TOKEN}`**：`${}` 展开是本项目 CLI
-自己实现的行为，多数 MCP 客户端不支持，直接拷过去会拿到字面量从而 401。客户端里**填真值**。
+3. 重启客户端，确认 `mcd-mcp` 已连接（工具列表里有 `calculate-price` 即可）。
 
-**用法 B · 直接跑本仓库的 CLI**——三种配法，命中即停：
-
-```bash
-export MCD_MCP_TOKEN=<你的 Token>            # ① 环境变量（推荐）
-python -m src.cli --token <你的 Token> ...   # ② 命令行传入
-cp mcp-config.example.json mcp-config.local.json  # ③ 文件（已 gitignore，不会误提交）
-```
-
-扫描顺序：`mcp-config.local.json` → `~/.workbuddy/mcp.json` → `~/.codebuddy/.mcp.json`
-→ `~/.cursor/mcp.json` → `mcp-config.example.json`。**不要把真实 Token 写进
-`mcp-config.example.json`**——它会被提交到仓库。
-
-**没有 Token 也能玩**：`python -m src.cli demo`、任意命令加 `--offline`（脱敏样例数据），
-或直接开在线版 https://mcsolve.app.workbuddy.host/ （免登录免 Token）。
+⚠️ **Token 要填真值**。仓库里那份 `mcp-config.example.json` 写的是
+`Bearer ${MCD_MCP_TOKEN}` 占位符，`${}` 展开是本项目 CLI 自己的行为，
+多数 MCP 客户端不支持，直接拷过去会拿到字面量从而 401。
 
 ## 一、McSolve：把 `calculate-price` 当「价格预言机」
 
@@ -179,8 +167,8 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 **视觉结构**是规则驱动的（配色 / 徽章触发 / 雷达打分），**文字**分两层：
 
 - **默认**：规则模板（`src/textpack.py` 的 `TEXT_REGISTRY`），零依赖、可复现；
-- **在环**：由 **WorkBuddy（宿主 agent）** 写**除数值外的全部文字**——
-  `brief` 导出素材 → WorkBuddy 生成 `copy_pack.json` → `--copy` 注入渲染。**无需任何外部模型 Key。**
+- **在环**：由 **WorkBuddy（宿主 agent）** 写**除数值外的全部文字**，产出下方结构的
+  `copy_pack.json`（仓库 CLI 用 `brief` / `--copy` 走同一条流转，见附录）。**无需任何外部模型 Key。**
 
 | 字段 | 覆盖内容 |
 |---|---|
@@ -200,7 +188,21 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 > **数值永不出自模型**：金额 / 单量 / 热量 / 积分一律由规则计算，`{占位符}` 由程序填充。
 > `grade_word` 支持两种写法：一个字符串（所有评级同一句），或 `{"S":…,"A":…,"B":…,"C":…}` 按档位各写一句。
 
-## 命令行用法（可直接跑）
+## 安全准则
+
+- **只读优先**：McSolve / McPreheat / archive 只调用查询类工具，**不发起**取消、抽奖、领券、
+  改地址等任何写操作；`solve` 的验价**不产生任何订单**。
+- **点餐是唯一写操作，且默认关闭**：未得到用户**显式确认**前只做算价预览，
+  **绝不调用 `create-order`**；下单前先列出门店/餐品/实付明细，让用户自己拍板。
+- **真实下单会产生真实订单与费用**，请用户自行确认门店与餐品后再执行；下单成功保留 `orderId` 以便撤销。
+- **隐私**：Token 只存在于客户端的 MCP 配置里，不写入日志、不进产物、不提交仓库。
+- **诚实口径**：`order-list` 仅返回最近约 10 单，文案以「最近 N 单」为准，不夸大。
+- **免责声明**：结论仅供个人复盘，不构成医疗或营养建议。
+
+## 附：命令行实现（需 clone 仓库；只是用这个 Skill 的话，本节可跳过）
+
+上面所有玩法都由宿主 agent 直接调 MCP 工具完成。仓库里的 Python CLI 是**同一套逻辑的
+可复现实现**（便于核对算法与跑测试），不是使用本 Skill 的必要条件。
 
 ```bash
 export MCD_MCP_TOKEN=<你的麦当劳 MCP Token>
@@ -229,25 +231,8 @@ python -m src.cli brief --for archive                    # 也可 --for solve / 
 python -m src.cli archive --copy copy_pack.json --html card.html --png card.png
 python -m src.cli solve --items 板烧鸡腿堡 --copy copy_pack_solve.json
 python -m src.cli preheat --copy copy_pack_preheat.json
-
-# 离线演示（无需 Token，用脱敏样例数据跑完整链路）
-python -m src.cli demo
-python -m src.cli --offline solve --items 板烧鸡腿堡
-python -m src.cli --offline preheat
 ```
 
 子命令共 15 个：`archive` `orders` `savings` `account` `campaign` `store` `tools` `card`
-`demo` `brief` `stores` `menu` `eat` `preheat` `solve`。
+`demo` `brief` `stores` `menu` `eat` `preheat` `solve`（`demo` / `--offline` 跑脱敏样例数据）。
 跑完任一条都会给**下一步建议**（preheat → solve → eat → archive → preheat 闭环）。
-
-## 安全准则
-
-- **只读优先**：McSolve / McPreheat / archive 只调用查询类工具，**不发起**取消、抽奖、领券、
-  改地址等任何写操作；`solve` 的验价**不产生任何订单**。
-- **点餐是唯一写操作，且默认关闭**：不加 `--yes`（或交互未输入「下单」）时只做**算价预览**，
-  **绝不调用 `create-order`**；下单前打印门店/餐品/实付明细，须显式确认。
-- **真实下单会产生真实订单与费用**，请自行确认门店与餐品后再执行；下单成功保留 `orderId` 以便撤销。
-- **隐私**：Token 用环境变量注入，不写入日志、不进产物、不提交仓库；仓库内样例数据均已脱敏。
-- **诚实口径**：`order-list` 仅返回最近约 10 单，文案以「最近 N 单」为准，不夸大；
-  离线演示的价格为样例估算，产物里会明确标注。
-- **免责声明**：结论仅供个人复盘，不构成医疗或营养建议。
