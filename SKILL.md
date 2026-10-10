@@ -63,9 +63,8 @@ license: MIT
 多数 MCP 客户端不支持，直接拷过去会拿到字面量从而 401。
 
 4. **自检**（每轮任务开工前值得花这一步）：调一次 `now-time-info`，
-   能拿到服务器时间就是连上了。命令行用户可跑 `python -m src.cli doctor`，
-   它一次性报出：Token 找没找到、从哪个文件找到的、能不能连上、
-   依赖的 20 个只读工具缺哪几个（Token 只显示首尾各 4 位，可安全粘贴到 issue）。
+   能拿到服务器时间就是连上了；再调一次 `query-my-account` 或 `order-list`
+   确认业务数据可读。连不上时，按下面「没连上时，怎么引导用户」处理。
 
 ### 没连上时，怎么引导用户
 
@@ -81,8 +80,7 @@ license: MIT
 5. 等用户配置期间，**不要**编造菜单、价格或优惠。
 
 > **先确认连不连得上，再决定走玩法还是引导配置**——别一上来就让人去申请 Token，
-> 对方很可能早就配好了。命令行侧同理：联网命令在没 Token 时会直接打印
-> 「去哪申请 / 填到哪 / 怎么自检」并以退出码 2 结束，不会丢一个 403 给你。
+> 对方很可能早就配好了。
 
 ## 一、McSolve：把 `calculate-price` 当「价格预言机」
 
@@ -144,7 +142,7 @@ now-time-info       服务器时间（倒计时与「今天」的锚点）
 | 5. 取场景 | 门店、地址、菜单/常点、门店券、算价 | `query-nearby-stores`、`delivery-query-addresses`、`delivery-query-stores`、`query-meals`、`query-meal-detail`、`query-store-coupons`、`calculate-price` |
 | 6. 取营销 | 活动日历、服务器时间 | `campaign-calendar`、`now-time-info` |
 | 7. 取营养库 | 把订单商品名映射成热量/钠/蛋白 | `list-nutrition-foods` |
-| 8. 生成档案 | 六大画像 + 人格 + 卡片 + 工具清单 | 本地分析（`src/analysis.py`、`src/persona.py`、`src/theme.py`、`src/report/`） |
+| 8. 生成档案 | 六大画像 + 人格 + 卡片 + 工具清单 | 本地分析（六大画像规则 + 人格引擎 + 主题渲染，由宿主 agent 按本文档规则实现） |
 | 9. **（可选）点餐** | 选店→选餐→算价→（确认）下单→复核 | `query-nearby-stores`、`query-meals`、`query-meal-detail`、`calculate-price`、**`create-order`**、`query-order` |
 
 **按域归类（共 21 个，含 1 个可选写）：**
@@ -157,7 +155,7 @@ now-time-info       服务器时间（倒计时与「今天」的锚点）
 | 场景 | `query-nearby-stores`、`delivery-query-addresses`、`delivery-query-stores`、`query-meals`、`query-meal-detail`、`query-store-coupons`、`calculate-price` |
 | 营销 | `campaign-calendar`、`now-time-info` |
 | 营养 | `list-nutrition-foods` |
-| **点餐（写）** | **`create-order`**（默认关闭，`eat --yes` 才触发） |
+| **点餐（写）** | **`create-order`**（默认关闭，须显式确认才触发） |
 
 ### 点餐链路（唯一写操作，默认关闭）
 
@@ -191,16 +189,16 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 
 外加一份**MCP 工具覆盖清单**，让「用了多少 MCP 能力」看得见。
 
-**千人千面**：人格 → 一整套深色潮酷配色 + Slogan（`src/theme.py`），
+**千人千面**：人格 → 一整套深色潮酷配色 + Slogan，
 **同一份档案，不同的人打开是不同的那张海报**；分享产物为**竖版长图**（朋友圈/小红书比例）。
 
 ## 文案：WorkBuddy 在环（默认规则，可选模型）
 
 **视觉结构**是规则驱动的（配色 / 徽章触发 / 雷达打分），**文字**分两层：
 
-- **默认**：规则模板（`src/textpack.py` 的 `TEXT_REGISTRY`），零依赖、可复现；
+- **默认**：规则模板（内置默认文案），零依赖、可复现；
 - **在环**：由 **WorkBuddy（宿主 agent）** 写**除数值外的全部文字**，产出下方结构的
-  `copy_pack.json`（仓库 CLI 用 `brief` / `--copy` 走同一条流转，见附录）。**无需任何外部模型 Key。**
+  `copy_pack.json`。**无需任何外部模型 Key。**
 
 | 字段 | 覆盖内容 |
 |---|---|
@@ -230,45 +228,3 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 - **隐私**：Token 只存在于客户端的 MCP 配置里，不写入日志、不进产物、不提交仓库。
 - **诚实口径**：`order-list` 仅返回最近约 10 单，文案以「最近 N 单」为准，不夸大。
 - **免责声明**：结论仅供个人复盘，不构成医疗或营养建议。
-
-## 附：命令行实现（需 clone 仓库；只是用这个 Skill 的话，本节可跳过）
-
-上面所有玩法都由宿主 agent 直接调 MCP 工具完成。仓库里的 Python CLI 是**同一套逻辑的
-可复现实现**（便于核对算法与跑测试），不是使用本 Skill 的必要条件。
-
-```bash
-export MCD_MCP_TOKEN=<你的麦当劳 MCP Token>
-
-# —— 首次使用：环境自检（Token 从哪找到的 / 连不连得上 / 缺哪些工具）——
-python -m src.cli doctor
-
-# —— 吃之前：算这一单怎么点最划算（全程只读，不产生订单）——
-python -m src.cli solve --items 板烧鸡腿堡 巨无霸        # 出最优解 + 战报长图
-python -m src.cli solve --items 板烧鸡腿堡 --add 3 --top 30 --budget 60
-python -m src.cli solve --items 板烧鸡腿堡 --html solve_report.html
-
-# —— 吃之前：活动倒计时 + 券到期冲突 + 备战度（全程只读）——
-python -m src.cli preheat
-
-# —— 吃之后：六维复盘 + 麦门人格卡 ——
-python -m src.cli archive --html card.html --png card.png --out profile.md
-python -m src.cli orders / savings / account / campaign / store / tools
-
-# —— 点餐闭环（默认安全，只算价不下单）——
-python -m src.cli stores                          # 查看可选门店
-python -m src.cli menu --store 1990262            # 可视化菜单（带图带价，点选导出 code:qty）
-python -m src.cli eat --dry-run --items 麦辣鸡腿堡:1 圆筒冰淇淋:2
-python -m src.cli eat --yes --items 9900016076:1  # 真实下单（会产生真实费用）
-
-# —— 文案（WorkBuddy 在环）：导出素材 → 生成文案包 → 注入渲染 ——
-python -m src.cli brief --for archive                    # 也可 --for solve / --for preheat
-#   （WorkBuddy 读取 brief，产出 copy_pack.json）
-python -m src.cli archive --copy copy_pack.json --html card.html --png card.png
-python -m src.cli solve --items 板烧鸡腿堡 --copy copy_pack_solve.json
-python -m src.cli preheat --copy copy_pack_preheat.json
-```
-
-子命令共 16 个：`archive` `orders` `savings` `account` `campaign` `store` `tools` `card`
-`demo` `brief` `doctor` `stores` `menu` `eat` `preheat` `solve`
-（`demo` / `--offline` 跑脱敏样例数据；`doctor` 做环境自检）。
-闭环上的四个入口（`preheat` / `solve` / `eat` / `archive`）跑完会给**下一步建议**。

@@ -2,11 +2,7 @@ __pycache__/
 *.pyc
 .venv/
 .env
-
-# 本机 MCP Token 配置（含真实 Token，绝不入库）
-mcp-config.local.json
 *.log
-examples/menu_img/
 
 # WorkBuddy 本地会话记忆（不进仓库）
 .workbuddy/
