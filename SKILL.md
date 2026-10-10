@@ -1,36 +1,81 @@
 ---
 name: mcd-profile
-version: 1.2.0
+version: 2.0.0
 display_name: "麦麦档案"
 display_name_en: "McProfile"
-description: "把你的麦当劳历史订单，变成一份『消费 × 省钱 × 健康 × 权益』多维复盘 + 麦门人格卡片；并可选完成一次真实点餐，点餐后生成一张千人千面、自带战报的炫酷分享档案。用于『我在麦当劳花了/省了多少、吃了多少热量 / 看看我的麦门人格 / 券和积分有没有浪费 / 帮我点一份』等场景。档案全程只读历史订单与权益数据；点餐为可选写操作，默认 dry-run、须显式确认。依赖 mcd-mcp MCP 服务，覆盖官方 20 个只读工具 +（可选）1 个下单工具。"
+description: "围绕麦当劳官方 MCP 的一套「吃之前 → 吃之后」闭环：McSolve 先用官方 calculate-price 反复验价，算出这一单怎么点最划算（全程只读、不产生订单）；McPreheat 把活动日历和券到期日交叉，告诉你哪些券等不到活动那天；吃完再用 archive 把每一单变成『消费 × 省钱 × 健康 × 权益』复盘 + 麦门人格卡。用于『这单怎么点最划算 / 我的券什么时候到期、赶得上活动吗 / 我在麦当劳花了/省了多少、吃了多少热量 / 我的麦门人格 / 帮我点一份』等场景。依赖 mcd-mcp MCP 服务，覆盖官方 20 个只读工具 +（可选、默认关闭）1 个下单工具。"
 license: MIT
 ---
 
 # 麦麦档案 (McProfile)
 
-不做只会点餐的助手，而做**复盘**——把「已经吃过的每一单麦当劳」翻译成看得懂、晒得出的个人复盘；
-并在此基础上，提供一条**默认安全（dry-run）**的**可选点餐闭环**，点完单立刻得到一张
-**「本次战报 + 历史画像」合体**的炫酷分享档案。
+不做只会点餐的助手，而做**一条从「吃之前」到「吃之后」的闭环**：
 
-所有数据均通过 **`mcd-mcp` MCP 服务** 获取（见 `mcp-config.example.json`）；
-本 Skill 负责把历史订单、权益、商城、场景、营销数据，翻译成**六大画像 + 麦门人格 + 工具覆盖清单**。
+- **吃之前 · McSolve（招牌）**：说一句你想吃什么，它穷举上千种组合、逐一让官方 `calculate-price`
+  **验真实价**，给出带 S/A/B/C 评级的**最优解 + 战报长图**——**全程只读，不产生任何订单**；
+- **吃之前 · McPreheat**：距下一场活动还有几天，**你的券等得到那天吗**；
+- **吃之后 · archive**：把每一单翻译成看得懂、晒得出的**六维复盘 + 麦门人格卡**；
+- **（可选）点餐闭环**：默认 dry-run，须显式确认才会真正下单。
+
+所有数据均通过 **`mcd-mcp` MCP 服务** 获取（见 `mcp-config.example.json`）。
+除数值外的**全部展示文字**可由 **WorkBuddy（宿主 agent）** 生成，无需任何外部模型 Key。
+
+🚀 **零门槛体验**：https://mcsolve.app.workbuddy.host/ （免登录、免 Token，页面里就能跑求解器与倒计时）
+⭐ **仓库**：https://github.com/dengbin21/mcd-profile
 
 ## 何时触发
 
-用户表达「回顾在麦当劳的花销/饮食/权益」，例如：
+| 用户说 | 走哪条 |
+|---|---|
+| 「这单怎么点最划算」「帮我算算买什么最省」「我想吃 X，怎么点」 | **McSolve** → `solve` |
+| 「我的券什么时候到期」「下周活动我的券还能用吗」「帮我备战」 | **McPreheat** → `preheat` |
+| 「我在麦当劳花了/省了多少钱」「吃了多少热量」「我的麦门人格」 | 档案 → `archive` |
+| 「我常去哪家店、常点什么」「最近有什么活动」 | 档案 → `savings` / `campaign` |
+| 「帮我点一份…」 | 点餐闭环 → `eat`（默认 dry-run，须显式确认） |
 
-- 「看看我的麦麦档案」「我在麦当劳花了多少钱」
-- 「帮我统计一下这月在麦当劳吃了多少热量」
-- 「我在麦当劳省了多少钱」「我的券有没有浪费」
-- 「我的麦门人格是什么」「生成一张麦当劳年度总结卡片」
-- 「我最近的麦当劳活动有哪些」「我常去哪家店、常点什么」
-- 「帮我点一份…（点餐闭环，需显式确认）」→ 走 `eat` 子命令
+**优先级**：用户问「怎么点/怎么买/划算吗」时**先给 McSolve**，不要用 `archive` 的省钱复盘去回答——
+后者是历史统计，前者才是「这一单」的答案。
+
+## 一、McSolve：把 `calculate-price` 当「价格预言机」
+
+全场都把 `calculate-price` 当「下单前的最后一步」：调一次，看看多少钱，然后下单，用完即弃。
+
+但它其实是**免费、只读、不产生订单、可以无限次调用**的接口——
+换句话说：**不花一分钱，你就能知道任意商品组合的真实实付价。**
+
+```
+query-nearby-stores   你的门店
+query-meals           全菜单 100+ 款（带图带价）
+query-my-coupons      你手里的券（含到期时间）
+query-store-coupons   门店活动（三件6折 / 满30减5）
+available-coupons     麦麦省可领券
+        ↓  本地按券门槛剪枝、枚举候选组合（默认最多追加 3 件）
+calculate-price × N   逐单官方验真实价（默认 Top 30）        ★ 引擎在这里
+list-nutrition-foods  最优解的营养
+```
+
+**主指标是省钱率，不是最低实付**——否则目标函数会退化成「劝人只点 1 件」。
+券规则解析支持满减 / 折扣 / 免费 / 买一送一 / 件数折扣（含中文数字「三」）；
+买一送一必须组合里含该商品且 `count >= 2` 才生效。
+
+护栏：`MAX_ADD_HARD=4`、`MAX_ENUM=20000`（超出时**整层**收敛、不半层截断，结果无偏）；
+验价失败如实披露 `fail_count`，**不谎称「没有解」**。
+
+## 二、McPreheat：活动日历 × 券到期日的交叉冲突
+
+```
+campaign-calendar   未来的活动（按日期分桶，不信任 stage 字段）
+query-my-coupons    每张券的到期日
+now-time-info       服务器时间（倒计时与「今天」的锚点）
+```
+
+钩子是**「有些券等不到活动那天」**：券到期日 < 活动开始日即冲突。
+产出倒计时 + 冲突清单 + **备战度 S/A/B/C**（扣分重、加分轻，避免「有冲突却评 S」的自相矛盾）。
+日期解析不出时**披露 `unparsed_count`**，不说「没有可预热的活动」。
 
 ## 能力与工具映射（官方 20 只读工具 + 1 可选写）
 
-> 设计原则：在**「只读复盘」**的边界内，尽量把官方工具**用满、用透**——
-> 每个工具都有实际产出（见档案末尾的「工具覆盖清单」），不为凑数而凑数。
+> 设计原则：在**「只读」**的边界内把官方工具**用满、用透**——每个工具都有实际产出，不为凑数而凑数。
 > 写操作**只保留 `create-order`**（点餐闭环），且**默认关闭、须显式确认**。
 
 | 步骤 | 目的 | 调用的 MCP 工具 |
@@ -42,7 +87,7 @@ license: MIT
 | 5. 取场景 | 门店、地址、菜单/常点、门店券、算价 | `query-nearby-stores`、`delivery-query-addresses`、`delivery-query-stores`、`query-meals`、`query-meal-detail`、`query-store-coupons`、`calculate-price` |
 | 6. 取营销 | 活动日历、服务器时间 | `campaign-calendar`、`now-time-info` |
 | 7. 取营养库 | 把订单商品名映射成热量/钠/蛋白 | `list-nutrition-foods` |
-| 8. 生成档案 | 六大画像 + 人格 + 卡片 + 工具清单 | 本地分析（`src/analysis.py`、`src/persona.py`、`src/theme.py`、`src/report/`（base/markdown/html/png）） |
+| 8. 生成档案 | 六大画像 + 人格 + 卡片 + 工具清单 | 本地分析（`src/analysis.py`、`src/persona.py`、`src/theme.py`、`src/report/`） |
 | 9. **（可选）点餐** | 选店→选餐→算价→（确认）下单→复核 | `query-nearby-stores`、`query-meals`、`query-meal-detail`、`calculate-price`、**`create-order`**、`query-order` |
 
 **按域归类（共 21 个，含 1 个可选写）：**
@@ -70,14 +115,13 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 > **硬依赖**：到店场景 `create-order` 的 `takeWayCode` **必传**，且只能来自
 > `calculate-price` 的 `takeWayList[].code` —— **下单前必须先算价**。
 >
-> **有图有价**：`query-meals` 顶层 `meals` 字典一次拿全 100+ 款商品的「图+价+名」，
-> 生成分享卡时商品图**内嵌**进卡片（HTML 为 `data:` URI 自包含，PNG 用 matplotlib 嵌入）。
+> **有图有价**：`query-meals` 顶层 `meals` 字典一次拿全 100+ 款商品的「图+价+名」。
 
-## 生成的六大画像
+## 生成的六大画像（`archive`）
 
 | 画像 | 内容 |
 |---|---|
-| 🎬 **本次点餐战报** | 点餐闭环产物：门店/时间/餐品（**带商品缩略图**）/实付/省下/本单热量（无点餐时不展示） |
+| 🎬 **本次点餐战报** | 点餐闭环产物：门店/时间/餐品（**带商品缩略图**）/实付/省下/本单热量 |
 | 🏅 **成就徽章墙** | 从数据里挑出的「可炫耀」成就，最多 9 枚（3×3） |
 | 💬 **麦门金句** | 千人千面、可截图的传播文案 |
 | 💰 **消费** | 累计消费、平均客单、最贵/最省一单、最爱门店、复购最多单品、时段分布 |
@@ -88,23 +132,18 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 | 📅 **活动** | 官方活动日历中的**今日进行中 / 即将到来**活动 |
 | 🎭 **麦门人格** | 按行为特征生成人格标签（如「优惠猎人 / 早餐仪式感大师 / 深夜加餐党」）+ 六维雷达 |
 
-外加一份**MCP 工具覆盖清单**（本次调了哪些官方工具、各自产出多少条），让「用了多少 MCP 能力」看得见。
+外加一份**MCP 工具覆盖清单**，让「用了多少 MCP 能力」看得见。
 
 **千人千面**：人格 → 一整套深色潮酷配色 + Slogan（`src/theme.py`），
-**同一份档案，不同的人打开是不同的那张海报**；分享产物为**竖版长图**（1080×自适应，朋友圈/小红书比例）。
-> **称号亦可千人千面**：默认是规则人格标签（如「优惠猎人」），但**可由 WorkBuddy 命名**独一份的称号
-> （如「满减操盘手」）；**配色仍锚定规则人格**，保证视觉不会错乱。
+**同一份档案，不同的人打开是不同的那张海报**；分享产物为**竖版长图**（朋友圈/小红书比例）。
 
-### 文案：WorkBuddy 在环（默认规则，可选模型）
+## 文案：WorkBuddy 在环（默认规则，可选模型）
 
-档案的**视觉结构**是规则驱动的（配色 / 徽章触发 / 雷达打分），**文字**则分两层：
+**视觉结构**是规则驱动的（配色 / 徽章触发 / 雷达打分），**文字**分两层：
 
-- **默认**：规则模板（`src/textpack.py` 的文本注册表 `TEXT_REGISTRY` +
-  `theme.build_quips` / `report.build_advice`），零依赖、可复现；
-- **在环**：由 **WorkBuddy（宿主 agent）** 写**除数值外的全部文字**（`src/textpack.py`）——
+- **默认**：规则模板（`src/textpack.py` 的 `TEXT_REGISTRY`），零依赖、可复现；
+- **在环**：由 **WorkBuddy（宿主 agent）** 写**除数值外的全部文字**——
   `brief` 导出素材 → WorkBuddy 生成 `copy_pack.json` → `--copy` 注入渲染。**无需任何外部模型 Key。**
-
-**覆写范围（除数值外的全部文字）**：
 
 | 字段 | 覆盖内容 |
 |---|---|
@@ -113,75 +152,65 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 | `labels` | **全部区块标题、指标名、KPI 名、表头、页脚、元信息行**（key 见 `brief.text_map`，**须保留 `{占位符}`**） |
 | `radar` | 雷达维度名（原名 → 新名） |
 | `badge_title` | 徽章名（原名 → 新名） |
+| `solve` / `preheat` | 场景整句覆写：`headline` / `grade_word` / `notes`（solve）、`tips`（preheat） |
 
-> **数值永不出自模型**：金额 / 单量 / 热量 / 积分等一律由规则计算；`labels` 里的
-> `{rate}`/`{n}`/`{theme}` 等占位符由程序填充，模型只改文字、必须原样保留。
+### 三道护栏（模型写文案难免出错，出错的条目**自动回退默认文案**并显式打印）
 
-## 工作流程
+1. **键名写错**（如 `sv.hero_title`）→ 提示相近的正确键，否则这条改写静默失效而你还以为生效了；
+2. **删掉 `{占位符}`** → 数值会凭空消失，必须回退；
+3. **夹带 `facts` 里没有的数字**（疑似编造）→ 回退。
 
-1. **采集**：调用上述 20 个只读工具（`src/sources.py`），归一化为领域模型；
-   从订单推断最爱门店参数，供 `query-meals` / `query-store-coupons` / `calculate-price` 复用。
-   任一工具失败不致命，记录告警并计入工具清单；全部失败则回退脱敏样例。
-2. **补全优惠**：逐单调 `query-order` 取 `couponList / totalDiscountAmount / takeWay / storeAddress`，据此算省钱率。
-3. **映射营养**：套餐按 `comboItemList` 拆件，逐项匹配 `list-nutrition-foods`；
-   命中率以「覆盖率」如实披露。
-4. **分析**：消费 / 省钱 / 健康 / 习惯 / 权益 / 活动 六大画像（`src/analysis.py`）。
-5. **人格**：按 早餐/夜宵/肉食/甜品/咖啡/省钱 六维打分，生成人格标签与雷达（`src/persona.py`）。
-6. **呈现**：输出 Markdown 档案 + MCP 工具覆盖清单，可选导出**可分享卡片**（暗黑潮酷 HTML / 竖版长图 PNG）（`src/report/`（base/markdown/html/png）、`src/theme.py`）。
-7. **（可选）点餐闭环**（`src/ordering.py`）：选店 → 选餐（**富菜单：一次拿到 100+ 款的图+价+名**）
-   → 算价 →（安全护栏）下单 → 复核；下单后把这一单组装成**战报**（`build_meal_report`）**并入档案**；
-   商品图经 `src/images.py` 下载后**内嵌**进分享卡
-   （HTML 转 `data:` URI 自包含，PNG 用 matplotlib 嵌入），缺图/断网自动降级为纯文字。
-   生成合体分享长图。
-   > **可视化点餐**（`src/menu_view.py` / `menu` 子命令）：终端与选择卡片渲染不了图片，
-   > 故提供网页版菜单——把 100+ 款商品的图+价铺出来，支持类目筛选 / 搜索 / 点选购物车，
-   > 一键复制**点餐话术**（如「我要点：麦辣鸡腿汉堡×2（门店，到店取餐）」），粘贴回对话即可点单；
-   > 也可导出 `code:qty` 清单喂给 `eat --items ...`。
-8. **（可选）文案在环**（`src/textpack.py`）：`brief` 导出素材（含全部文字默认值 + 输出 schema）
-   → WorkBuddy 生成 `copy_pack.json`（可覆盖**除数值外的全部文字**：称号 / 区块标题 / 指标名 /
-   雷达维度 / 徽章名 …）→ `--copy` 注入；不注入则回退规则模板。
+> **数值永不出自模型**：金额 / 单量 / 热量 / 积分一律由规则计算，`{占位符}` 由程序填充。
+> `grade_word` 支持两种写法：一个字符串（所有评级同一句），或 `{"S":…,"A":…,"B":…,"C":…}` 按档位各写一句。
 
 ## 命令行用法（可直接跑）
 
 ```bash
 export MCD_MCP_TOKEN=<你的麦当劳 MCP Token>
 
-# 生成麦麦档案（联网读取真实数据，调用 20 个官方只读工具）
-python -m src.cli archive
+# —— 吃之前：算这一单怎么点最划算（全程只读，不产生订单）——
+python -m src.cli solve --items 板烧鸡腿堡 巨无霸        # 出最优解 + 战报长图
+python -m src.cli solve --items 板烧鸡腿堡 --add 3 --top 30 --budget 60
+python -m src.cli solve --items 板烧鸡腿堡 --html solve_report.html
 
-# 导出分享卡片 + 档案
+# —— 吃之前：活动倒计时 + 券到期冲突 + 备战度（全程只读）——
+python -m src.cli preheat
+
+# —— 吃之后：六维复盘 + 麦门人格卡 ——
 python -m src.cli archive --html card.html --png card.png --out profile.md
-
-# 分维度查看
-python -m src.cli orders      # 历史订单（含券/优惠）
-python -m src.cli savings     # 省钱复盘
-python -m src.cli account     # 积分与券
-python -m src.cli campaign    # 近期活动
-python -m src.cli store       # 门店与地址
-python -m src.cli tools       # MCP 工具覆盖清单
+python -m src.cli orders / savings / account / campaign / store / tools
 
 # —— 点餐闭环（默认安全，只算价不下单）——
 python -m src.cli stores                          # 查看可选门店
-python -m src.cli menu --store 1990262            # 可视化点餐菜单（带图带价，点选导出 code:qty）
-python -m src.cli eat --dry-run                   # 选店→选餐→算价 + 生成分享档案（不下单）
-python -m src.cli eat --dry-run --items 麦辣鸡腿堡 圆筒冰淇淋:2   # 按名称点餐（自动换官方编码，歧义时列候选）
-python -m src.cli eat --yes --items 9900016076:1 --share out.png   # 真实下单并出竖版长图
-
-# 离线演示（无需 Token；已内嵌一张脱敏「本次战报」）
-python -m src.cli demo
+python -m src.cli menu --store 1990262            # 可视化菜单（带图带价，点选导出 code:qty）
+python -m src.cli eat --dry-run --items 麦辣鸡腿堡:1 圆筒冰淇淋:2
+python -m src.cli eat --yes --items 9900016076:1  # 真实下单（会产生真实费用）
 
 # —— 文案（WorkBuddy 在环）：导出素材 → 生成文案包 → 注入渲染 ——
-python -m src.cli brief --out copy_brief.json          # 导出文案素材（交给 WorkBuddy）
-#   （WorkBuddy 读取 copy_brief.json，产出 copy_pack.json）
+python -m src.cli brief --for archive                    # 也可 --for solve / --for preheat
+#   （WorkBuddy 读取 brief，产出 copy_pack.json）
 python -m src.cli archive --copy copy_pack.json --html card.html --png card.png
+python -m src.cli solve --items 板烧鸡腿堡 --copy copy_pack_solve.json
+python -m src.cli preheat --copy copy_pack_preheat.json
+
+# 离线演示（无需 Token，用脱敏样例数据跑完整链路）
+python -m src.cli demo
+python -m src.cli --offline solve --items 板烧鸡腿堡
+python -m src.cli --offline preheat
 ```
+
+子命令共 15 个：`archive` `orders` `savings` `account` `campaign` `store` `tools` `card`
+`demo` `brief` `stores` `menu` `eat` `preheat` `solve`。
+跑完任一条都会给**下一步建议**（preheat → solve → eat → archive → preheat 闭环）。
 
 ## 安全准则
 
-- **档案只读**：复盘部分仅调用查询类工具，**不发起**取消、抽奖、领券、改地址等任何写操作。
+- **只读优先**：McSolve / McPreheat / archive 只调用查询类工具，**不发起**取消、抽奖、领券、
+  改地址等任何写操作；`solve` 的验价**不产生任何订单**。
 - **点餐是唯一写操作，且默认关闭**：不加 `--yes`（或交互未输入「下单」）时只做**算价预览**，
   **绝不调用 `create-order`**；下单前打印门店/餐品/实付明细，须显式确认。
 - **真实下单会产生真实订单与费用**，请自行确认门店与餐品后再执行；下单成功保留 `orderId` 以便撤销。
-- **隐私**：Token 用环境变量注入，不写入日志、不提交公开仓库；仓库内样例数据均已脱敏。
-- **诚实口径**：`order-list` 仅返回最近约 10 单，文案以「最近 N 单」为准，不夸大。
-- **免责声明**：档案结论仅供个人复盘，不构成医疗或营养建议。
+- **隐私**：Token 用环境变量注入，不写入日志、不进产物、不提交仓库；仓库内样例数据均已脱敏。
+- **诚实口径**：`order-list` 仅返回最近约 10 单，文案以「最近 N 单」为准，不夸大；
+  离线演示的价格为样例估算，产物里会明确标注。
+- **免责声明**：结论仅供个人复盘，不构成医疗或营养建议。

@@ -1,4 +1,4 @@
-# 麦麦战绩 · McProfile
+# 麦麦档案 · McProfile
 
 > **先替你算出最划算的那一单，再帮你复盘吃过的每一单。**
 >
@@ -249,7 +249,7 @@ Token 通过环境变量注入，**不写死在仓库里**。
 ## 5. 使用示例
 
 ```bash
-# 生成你的麦麦战绩（联网读取真实数据，调用 20 个官方工具）
+# 生成你的麦麦档案（联网读取真实数据，调用 20 个官方工具）
 python -m src.cli archive
 
 # 同时导出分享卡片（HTML + PNG）与 Markdown 档案
@@ -391,7 +391,7 @@ mcd-profile/
 
 ## 9. 支持一下
 
-如果这份「麦麦战绩」让你想晒一张，**点个 Star 就是最大的支持**：
+如果这份「麦麦档案」让你想晒一张，**点个 Star 就是最大的支持**：
 
 **⭐ [github.com/dengbin21/mcd-profile](https://github.com/dengbin21/mcd-profile)**
 
