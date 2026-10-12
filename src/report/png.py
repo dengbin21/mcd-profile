@@ -124,11 +124,27 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
     bgax.set_ylim(0, 1)
     _vert_gradient(bgax, th.bg, th.bg2)
 
+    # 霓虹氛围：主色光晕（左上品牌光）+ 次色光晕（右下氛围光）
+    def glow(cx, cy, rad, rgb, peak=0.32):
+        import numpy as _np
+        n = 200
+        yy, xx = _np.mgrid[0:n, 0:n]
+        d = _np.sqrt(((xx / n - cx) * 10.8) ** 2 + ((yy / n - cy) * fig_h) ** 2) / rad
+        a = _np.clip(1 - d, 0, 1) ** 2 * peak
+        rgba = _np.zeros((n, n, 4))
+        for i in range(3):
+            rgba[..., i] = rgb[i]
+        rgba[..., 3] = a
+        bgax.imshow(rgba, extent=[0, 1, 0, 1], zorder=0, interpolation="bilinear")
+
+    glow(0.10, 1.02, 0.55, _hex(th.primary), 0.30)
+    glow(0.94, -0.02, 0.70, _hex(th.accent), 0.20)
+
     def panel(y0, y1, x0=0.06, x1=0.94, alpha=0.05):
         a0, a1 = M(y0), M(y1)
         bgax.add_patch(FancyBboxPatch((x0, a0), x1 - x0, a1 - a0,
                                       boxstyle="round,pad=0.006,rounding_size=0.02",
-                                      linewidth=1, edgecolor=(1, 1, 1, 0.10),
+                                      linewidth=1.2, edgecolor=(*_hex(primary), 0.22),
                                       facecolor=(1, 1, 1, alpha), zorder=1))
 
     def text(x, y, t, **kw):
@@ -149,12 +165,18 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
             ax.axis("off")
 
     # —— 头部 ——
+    from matplotlib import patheffects as _pe
+    is_draft = copy is None or not copy.active
+    _stroke = lambda w, fg: _pe.withStroke(linewidth=w, foreground=fg)   # noqa: E731
     text(0.06, 0.968, _png_plain(R("brand")), color=primary, fontsize=17, fontweight="bold")
-    text(0.06, 0.936, _png_plain(eff_label(a, copy)), color="#ffffff", fontsize=40, fontweight="black")
+    text(0.06, 0.936, _png_plain(eff_label(a, copy)), color="#FFFFFF", fontsize=44, fontweight="black",
+         path_effects=[_stroke(7, th.bg), _stroke(3, (*_hex(primary), 0.75))])
     text(0.06, 0.912, _png_plain(slogan), color=th.muted, fontsize=15)
     text(0.06, 0.893, " ".join(f"#{t}" for t in tags), color=accent, fontsize=13)
     text(0.94, 0.968, R("lbl.date_range", start=c.date_start, end=c.date_end),
          color=th.muted, fontsize=12, ha="right")
+    if is_draft:
+        text(0.94, 0.936, "草稿 · 模板文案", color="#FF6B5E", fontsize=13, ha="right", fontweight="bold")
 
     y = TOP
     for hh, kind in blocks:
@@ -187,7 +209,8 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
                 col, row = i % 3, i // 3
                 x = 0.10 + col * 0.28
                 yy = y - 0.038 - row * 0.055
-                text(x, yy, _png_plain(v), color=primary, fontsize=22, fontweight="bold")
+                text(x, yy, _png_plain(v), color=primary, fontsize=24, fontweight="bold",
+                     path_effects=[_stroke(3, th.bg), _stroke(1.5, (*_hex(primary), 0.45))])
                 text(x, yy - 0.024, _png_plain(k), color=th.muted, fontsize=11)
 
         elif kind == "radar":
@@ -215,12 +238,16 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
         elif kind == "badges":
             panel(y - hh, y)
             text(0.085, y - 0.026, _png_plain(R("sec.badges")), color="#ffffff", fontsize=15, fontweight="bold")
+            from matplotlib.patches import Circle
             for i, bg in enumerate(badges[:9]):
                 col, row = i % 3, i // 3
                 x = 0.105 + col * 0.285
                 yy = y - 0.052 - row * 0.045
-                text(x, yy, _png_plain(f"{bg.emoji} {bg.title}"), color=primary,
-                     fontsize=13, fontweight="bold")
+                bgax.add_patch(Circle((x + 0.008, M(yy)), 0.009,
+                                      facecolor=(*_hex(primary), 0.32), edgecolor=(*_hex(primary), 0.55),
+                                      linewidth=0.9, zorder=1))
+                text(x + 0.026, yy, _png_plain(f"{bg.emoji} {bg.title}"), color="#EDEAE3",
+                     fontsize=12.5, fontweight="bold")
 
         elif kind == "quips":
             panel(y - hh, y)
@@ -268,6 +295,9 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
         y -= hh + GAP
 
     # —— 页脚 ——
+    if is_draft:
+        fig.text(0.5, 0.070 / D, "草稿（未由 WorkBuddy 生成专属文案，使用了模板默认文字）",
+                 color="#FF6B5E", fontsize=12, ha="center")
     tools_line = (R("ft.tools", n=a.meta['tools_called']) if a.raw.tool_calls else R("ft.offline"))
     fig.text(0.5, 0.046 / D, _png_plain(R("ft.line1", tools=tools_line)),
              color=th.muted, fontsize=11, ha="center")
