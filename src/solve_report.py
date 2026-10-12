@@ -14,14 +14,15 @@
 """
 from __future__ import annotations
 
-from .report.tokens import REPO_URL, REPORT_BASE_CSS
+from .report.tokens import (
+    GRADE_COLOR, REPO_URL, REPORT_BASE_CSS, esc as _esc, html_wrap,
+)
 from .solver import Solution
 from .textpack import CopyPack, TextResolver, pick_grade_word
 from .theme import THEMES
 
 _THEME = THEMES.get("优惠猎人", next(iter(THEMES.values())))
 
-_GRADE_COLOR = {"S": "#FFC72C", "A": "#17C3A2", "B": "#4D7CFE", "C": "#98938B"}
 _GRADE_WORD = {
     "S": "这单可以吹一年",
     "A": "省得很体面",
@@ -39,19 +40,6 @@ def _avg_drop(sol: Solution) -> float:
     if not sol.baseline_avg:
         return 0.0
     return (sol.baseline_avg - sol.avg_price) / sol.baseline_avg * 100.0
-
-
-def _esc(s: str) -> str:
-    """HTML 转义，但放行 ``<br>``——模型文案靠它换行，其余标签一律挡掉。
-
-    文案来自模型，**不能直接插进 HTML**：否则一句带 ``<script>`` 的文案
-    就能把分享卡变成注入载体。这里白名单只留换行。
-    """
-    if not s:
-        return ""
-    out = (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            .replace('"', "&quot;"))
-    return out.replace("&lt;br&gt;", "<br>").replace("&lt;/br&gt;", "<br>")
 
 
 def _grade_word(sol: Solution, copy: CopyPack | None) -> str:
@@ -225,7 +213,7 @@ def render_solve_html(sol: Solution, *, store_name: str = "",
                 f"<p>{_esc(tx('sv.no_solution_html'))}</p>")
 
     g = sol.grade
-    gcolor = _GRADE_COLOR.get(g, "#98938B")
+    gcolor = GRADE_COLOR.get(g, "#98938B")
     n = sol.nutrition or {}
     hl = _headline(sol, copy)
 
@@ -320,14 +308,9 @@ def render_solve_html(sol: Solution, *, store_name: str = "",
     store_line = f"<div class='sub'>{_esc(store_name)}</div>" if store_name else ""
     hl_line = f"<div class='hline'>{_esc(hl)}</div>" if hl else ""
 
-    return f"""<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_esc(tx('sv.md_title'))}</title>
-<style>{_CSS}</style></head>
-<body><div class="wrap">
-
-<div class="hero">
+    return html_wrap(
+        _esc(tx('sv.md_title')), _CSS,
+        f"""<div class="hero">
   <div class="kicker">M C S O L V E</div>
   <div class="title">{_esc(tx('sv.kicker'))}</div>
   {store_line}
@@ -361,6 +344,5 @@ def render_solve_html(sol: Solution, *, store_name: str = "",
 <div class="foot">
   {_esc(foot_price)}<br>
   {_esc(tx('sv.foot_nutrition'))}
-</div>
-
-</div></body></html>"""
+</div>""",
+    )

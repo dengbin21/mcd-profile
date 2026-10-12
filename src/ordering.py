@@ -18,8 +18,7 @@ from dataclasses import dataclass, field
 
 from .mcp_client import McdMcpClient, McpError
 from .models import (
-    CartItem, MealInfo, MenuItem, OrderQuote, PlacedOrder, StoreInfo, TakeWay,
-    parse_store,
+    CartItem, MealInfo, MenuItem, OrderQuote, PlacedOrder, TakeWay,
 )
 
 
@@ -52,33 +51,6 @@ class OrderingSession:
     @property
     def mode_text(self) -> str:
         return {1: "到店取餐", 2: "麦乐送到家", 5: "得来速", 6: "企业团餐"}.get(self.be_type, "到店取餐")
-
-
-# ---------------------------------------------------------------------- #
-# 门店
-# ---------------------------------------------------------------------- #
-def list_stores(client: McdMcpClient, search_type: int = 1, city: str = "",
-                be_type: int = 1) -> list[StoreInfo]:
-    """查询可选门店：search_type=1 收藏餐厅，search_type=2 按城市位置搜索。"""
-    args: dict = {"beType": be_type, "searchType": search_type}
-    if city:
-        args["city"] = city
-    data = client.call_tool("query-nearby-stores", args)
-    items = data.get("list") if isinstance(data, dict) else data
-    return [parse_store(s) for s in items or []]
-
-
-def list_delivery_stores(client: McdMcpClient, address_id: str, be_type: int = 2) -> list[StoreInfo]:
-    """外送场景：按地址查可配送门店。"""
-    data = client.call_tool("delivery-query-stores", {"addressId": address_id, "beType": be_type})
-    items = data.get("list") if isinstance(data, dict) else data
-    return [parse_store(s) for s in items or []]
-
-
-def list_addresses(client: McdMcpClient) -> list[dict]:
-    data = client.call_tool("delivery-query-addresses")
-    items = (data or {}).get("addresses") if isinstance(data, dict) else []
-    return items or []
 
 
 # ---------------------------------------------------------------------- #

@@ -124,7 +124,7 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
     bgax.set_ylim(0, 1)
     _vert_gradient(bgax, th.bg, th.bg2)
 
-    def panel(y0, y1, x0=0.06, x1=0.94, color="white", alpha=0.05):
+    def panel(y0, y1, x0=0.06, x1=0.94, alpha=0.05):
         a0, a1 = M(y0), M(y1)
         bgax.add_patch(FancyBboxPatch((x0, a0), x1 - x0, a1 - a0,
                                       boxstyle="round,pad=0.006,rounding_size=0.02",

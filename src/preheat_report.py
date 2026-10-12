@@ -13,23 +13,10 @@
 from __future__ import annotations
 
 from .preheat import URGENT_DAYS, CouponWatch, Preheat
-from .report.tokens import REPO_URL, REPORT_BASE_CSS
+from .report.tokens import (
+    GRADE_COLOR, REPO_URL, REPORT_BASE_CSS, esc as _esc, html_wrap,
+)
 from .textpack import CopyPack, TextResolver
-
-_GRADE_COLOR = {"S": "#FFC72C", "A": "#17C3A2", "B": "#4D7CFE", "C": "#98938B"}
-
-
-def _esc(s: str) -> str:
-    """HTML 转义，但放行 ``<br>``——模型文案靠它换行，其余标签一律挡掉。
-
-    文案来自模型，**不能直接插进 HTML**：否则一句带 ``<script>`` 的文案
-    就能把分享卡变成注入载体。这里白名单只留换行。
-    """
-    if not s:
-        return ""
-    out = (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            .replace('"', "&quot;"))
-    return out.replace("&lt;br&gt;", "<br>").replace("&lt;/br&gt;", "<br>")
 
 
 def _expire_text(c: CouponWatch, tx: TextResolver) -> str:
@@ -222,7 +209,7 @@ def _coupon_rows(items: list[CouponWatch], bad: bool, tx: TextResolver) -> str:
 def render_preheat_html(pre: Preheat, copy: CopyPack | None = None) -> str:
     tx = TextResolver(copy)
     g = pre.grade
-    gcolor = _GRADE_COLOR.get(g, "#98938B")
+    gcolor = GRADE_COLOR.get(g, "#98938B")
 
     # ---- 倒计时 ----
     if pre.target:
@@ -324,14 +311,9 @@ def render_preheat_html(pre: Preheat, copy: CopyPack | None = None) -> str:
         if pre.coupon_unparsed_count else ""
     )
 
-    return f"""<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{_esc(tx('ph.md_title'))}</title>
-<style>{_CSS}</style></head>
-<body><div class="wrap">
-
-<div class="hero">
+    return html_wrap(
+        _esc(tx('ph.md_title')), _CSS,
+        f"""<div class="hero">
   <div class="kicker">M C P R E H E A T</div>
   <div class="title">{_esc(tx('ph.kicker'))}</div>
   <div class="head">{_esc(pre.headline)}</div>
@@ -354,6 +336,5 @@ def render_preheat_html(pre: Preheat, copy: CopyPack | None = None) -> str:
   {_esc(tx('ph.foot_tools'))}<br>
   {_esc(tx('ph.foot_disclaimer'))}
   <div class="cta">{_esc(tx('ph.cta', repo=REPO_URL))}</div>
-</div>
-
-</div></body></html>"""
+</div>""",
+    )

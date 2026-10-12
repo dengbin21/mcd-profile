@@ -26,17 +26,6 @@ class Food:
     sodium: float
     calcium: float = 0.0
 
-    def to_dict(self) -> dict:
-        return {
-            "productName": self.productName,
-            "energyKcal": self.energyKcal,
-            "protein": self.protein,
-            "fat": self.fat,
-            "carbohydrate": self.carbohydrate,
-            "sodium": self.sodium,
-            "calcium": self.calcium,
-        }
-
 
 def _norm(name: str) -> str:
     """归一化：去空白/括号/引号，模糊匹配用。"""
@@ -149,6 +138,3 @@ class NutritionIndex:
             if score > best_score:
                 best_score, best = score, f
         return best if best_score >= threshold else None
-
-    def nutrition_for(self, name: str) -> Food | None:
-        return self.match(name)

@@ -26,6 +26,37 @@ PANEL_IN = "#1A1710"        # 面板内嵌块
 
 REPO_URL = "https://github.com/dengbin21/mcd-profile"
 
+# 评级 → 强调色（McSolve 战报与 McPreheat 预热卡共用同一把颜色尺）
+GRADE_COLOR = {"S": "#FFC72C", "A": "#17C3A2", "B": "#4D7CFE", "C": "#98938B"}
+
+
+def esc(s: str) -> str:
+    """HTML 转义，但放行 ``<br>``——模型文案靠它换行，其余标签一律挡掉。
+
+    文案来自模型，**不能直接插进 HTML**：否则一句带 ``<script>`` 的文案
+    就能把分享卡变成注入载体。这里白名单只留换行。
+    """
+    if not s:
+        return ""
+    out = (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+           .replace('"', "&quot;"))
+    return out.replace("&lt;br&gt;", "<br>").replace("&lt;/br&gt;", "<br>")
+
+
+def html_wrap(title: str, css: str, body: str) -> str:
+    """公共 HTML 文档骨架：McSolve / McPreheat 两张卡片共用同一外壳。"""
+    return f"""<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>{css}</style></head>
+<body><div class="wrap">
+
+{body}
+
+</div></body></html>"""
+
+
 # ---------------------------------------------------------------------- #
 # 公共外壳
 # ---------------------------------------------------------------------- #

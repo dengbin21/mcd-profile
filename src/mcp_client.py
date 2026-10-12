@@ -118,20 +118,6 @@ class McdMcpClient:
             raise McpError(f"{name} 协议错误：{message['error']}")
         return self._extract(message.get("result", {}))
 
-    def list_tools(self) -> list[dict[str, Any]]:
-        """返回服务端声明的工具清单（``doctor`` 用它做连通性自检）。"""
-        payload = {"jsonrpc": "2.0", "id": self._next_id(), "method": "tools/list", "params": {}}
-        try:
-            resp = requests.post(
-                self.url, json=payload, headers=self._headers(), timeout=self.timeout
-            )
-            resp.raise_for_status()
-        except requests.HTTPError as exc:
-            raise _explain(exc, "tools/list") from exc
-        except requests.RequestException as exc:
-            raise McpError(f"连不上 mcd-mcp（{self.url}）：{exc}") from exc
-        return self._decode(resp).get("result", {}).get("tools", [])
-
     # ------------------------------------------------------------------ #
     # 解析
     # ------------------------------------------------------------------ #

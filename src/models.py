@@ -564,7 +564,3 @@ def parse_campaign(date: str, raw: dict, stage: str) -> CampaignEvent:
         content=(art.get("content") or "").strip(),
         stage=stage,
     )
-
-
-def parse_meal(raw: dict) -> MealInfo:
-    return MealInfo(code=str(raw.get("code", "")), name=raw.get("name", ""), tags=raw.get("tags", []) or [])

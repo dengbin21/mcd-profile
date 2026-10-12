@@ -60,31 +60,6 @@ class Archive:
     def errors(self) -> list[str]:
         return self.raw.errors
 
-    # ---- 工具覆盖 ----
-    @property
-    def tools_called(self) -> list[str]:
-        """本次真实调用的工具名（离线样例时为空）。"""
-        return [t.name for t in self.raw.tool_calls]
-
-    @property
-    def tools_ok(self) -> list[str]:
-        return [t.name for t in self.raw.tool_calls if t.ok]
-
-    @property
-    def tools_failed(self) -> list[str]:
-        return [t.name for t in self.raw.tool_calls if not t.ok]
-
-    @property
-    def tools_extra(self) -> list[str]:
-        """调用了但不在 POTENTIAL 清单里的（例如营养库单独记账）。"""
-        return [t for t in self.tools_called if t not in POTENTIAL_TOOLS]
-
-    def tool_note(self, name: str) -> str:
-        for t in self.raw.tool_calls:
-            if t.name == name:
-                return t.note
-        return ""
-
 
 def _today_tuple(arch: RawArchive) -> tuple[int, int, int]:
     """优先用官方 now-time-info 的服务器时间做「今天」，保证与官方一致。"""
