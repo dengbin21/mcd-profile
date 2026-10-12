@@ -7,3 +7,4 @@ __pycache__/
 
 # WorkBuddy 本地会话记忆（不进仓库）
 .workbuddy/
+.idea/
