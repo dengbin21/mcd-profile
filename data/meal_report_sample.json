@@ -1,0 +1,18 @@
+{
+  "_note": "脱敏样例：演示「点餐战报 + 历史画像」合体档案，非真实订单。",
+  "storeName": "南京徐庄路快捷小站",
+  "storeCode": "SAMPLE-STORE",
+  "createdAt": "2026-10-09 12:30:00",
+  "takeWay": "到店取餐",
+  "items": [
+    { "productCode": "SAMPLE-1", "name": "巨无霸套餐", "quantity": 1 },
+    { "productCode": "SAMPLE-2", "name": "中薯条", "quantity": 1 },
+    { "productCode": "SAMPLE-3", "name": "大杯鲜萃咖啡", "quantity": 1 }
+  ],
+  "originalAmount": 63.5,
+  "paidAmount": 42.0,
+  "discountAmount": 21.5,
+  "orderId": "SAMPLE-ORDER-20261009",
+  "status": "示例订单",
+  "placed": true
+}

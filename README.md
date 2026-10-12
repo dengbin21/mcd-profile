@@ -2,7 +2,9 @@
 
 [中文](./README.md) | [English](./README_EN.md)
 
+![tests](https://github.com/dengbin21/mcd-profile/actions/workflows/tests.yml/badge.svg)
 ![license](https://img.shields.io/github/license/dengbin21/mcd-profile)
+![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 
 > **先替你算出最划算的那一单，再帮你复盘吃过的每一单。**
 >
@@ -15,12 +17,12 @@
 >
 > 还有一句「我的券什么时候到期，赶得上下一场活动吗」，告诉你哪些券等不到那天。
 
-这是一个 **Agent Skill**，产品源代码就是 **`SKILL.md` 这一个文件**：它的指令由
-**宿主 AI 代理**（WorkBuddy / Codex / 其他支持 Skill + MCP 的客户端）读取，直接调用
-麦当劳官方 MCP（`mcd-mcp`）的 20 个只读工具完成全部玩法。因此：
+这是一个 **Agent Skill**：`SKILL.md` 定义工作流与触发规则，**确定性算法由随包的 `src/` 代码承载**
+（券解析 / 组合枚举 / 评级 / 日期解析 / 六维画像 / 人格判定），宿主 agent **复用**这些函数，
+而不是每个会话重新实现一遍。数据全部来自麦当劳官方 MCP（`mcd-mcp`）的 20 个只读工具。因此：
 
-- **装一个文件即可**：把 `SKILL.md` 放进客户端的 skills 目录就能用；
-- 不需要 clone 仓库、不需要装 Python、不需要任何模型 Key；
+- **装一个目录即可**：把本包（`SKILL.md` + `src/`）放进客户端的 skills 目录就能用；
+- 算法已实现并带 103 项离线自测，结果可复现、可靠；
 - 只读优先：求解 / 预热 / 复盘全部只调用查询类工具，不领券、不抽奖、不下单；
 - 唯一写操作 `create-order` 作为可选点餐闭环，默认关闭、须显式确认。
 
@@ -39,13 +41,14 @@
 | 3 | **预算 × 热量双约束** | 一句话同时满足「别超预算」和「别超标热量」；热量按官方营养库匹配、覆盖率如实披露，查不到的商品按下界处理、绝不误杀 |
 | 4 | **预热台：算出「哪些券等不到下一场活动」** | 券到期日 × 活动日历**交叉**，冲突是算出来的（不是编的文案）——大多数省钱类 Skill 不会把这两份数据交叉 |
 | 5 | **吃之前 → 吃之后一条闭环** | `preheat → solve → eat → archive` 一条时间线，每个入口跑完都给出「下一步」命令，不停在半路 |
-| 6 | **口径诚实、只读优先** | 唯一写操作 `create-order` 默认关闭、须显式确认；`order-list` 只返回最近约 10 单，定位「复盘」而非「年度账单」 |
+| 6 | **算法代码承载、结果可复现** | 券解析 / 枚举 / 评级 / 日期 / 画像 / 人格由 `src/` 实现并带 103 项离线自测——宿主 agent 复用而非每次重写，同一套规则结果一致；只读优先，唯一写操作 `create-order` 默认关闭、须显式确认 |
 
 ---
 
 ## 怎么用（两步）
 
-1. **装文件**：把 `SKILL.md` 放进客户端（WorkBuddy / Codex 等）的 skills 目录——这是本产品唯一需要的文件。
+1. **装包**：把本仓库（`SKILL.md` + `src/` 算法代码）放进客户端（WorkBuddy / Codex 等）的
+   skills 目录——宿主 agent 会复用 `src/` 里的确定性算法，无需你另行安装 Python 依赖。
 2. **配好麦当劳官方 MCP**（一次性）：到 **https://open.mcd.cn/mcp** 申请 Token，
    然后在客户端的 MCP 配置里加一条（以 WorkBuddy 的 `~/.workbuddy/mcp.json` 为例）：
 
@@ -142,17 +145,29 @@ list-nutrition-foods  最优解的营养
 
 ```
 mcd-profile/
-├── SKILL.md                ★ 产品源代码（唯一必需：触发表 / 玩法 / 工具映射 / 安全）
+├── SKILL.md                ★ Skill 定义（触发表 / 玩法 / 工具映射 / 安全）——宿主 agent 的「大脑」
+├── src/                    ★ 确定性算法代码（宿主 agent 复用，见 SKILL.md「算法代码承载」）
+│   ├── solver.py           McSolve：券解析 / 枚举剪枝 / 选优 / 评级
+│   ├── preheat.py          McPreheat：日期解析 / 冲突判定 / 备战度评分
+│   ├── analysis.py         archive 六维画像
+│   ├── persona.py          麦门人格判定（含无订单兜底）
+│   ├── nutrition.py        营养库匹配
+│   ├── models.py           领域模型 + 响应解析 + 单位换算
+│   └── ...（渲染 / 文案层，供校验与产物生成）
+├── tests/                  103 项离线自测（算法可靠性的依据）
+├── data/                   脱敏样例
 ├── README.md / README_EN.md  使用文档（中 / 英）
-├── MCP_INTEGRATION.md      麦当劳 MCP 集成说明（可选参考）
+├── MCP_INTEGRATION.md      麦当劳 MCP 集成说明
 ├── CONTEST_DECLARATION.md  参赛声明
 ├── workbuddy.md            WorkBuddy 开发上下文（参赛核验用）
 ├── LICENSE                 MIT 许可
 └── docs/demo-card.png      产物示例（README 配图）
 ```
 
-> 本产品不需要任何脚本或本地代码——全部功能由 `SKILL.md` 指令 + 官方 `mcd-mcp`
-> 服务完成，装一个文件即可用。
+> 架构要点：`SKILL.md` 描述工作流，**确定性逻辑（券解析 / 枚举 / 评级 / 日期 / 画像 / 人格）
+> 由 `src/` 代码承载**——宿主 agent 复用这些函数而不是每个会话重新实现，保证结果可复现。
+> 需要运行代码时，读取 `src/` 对应文件并在你的工具环境执行；103 项离线自测可先跑
+> `python -m pytest tests/ -q` 验证。
 
 ## 许可证
 

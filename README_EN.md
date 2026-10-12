@@ -2,7 +2,9 @@
 
 [中文](./README.md) | [English](./README_EN.md)
 
+![tests](https://github.com/dengbin21/mcd-profile/actions/workflows/tests.yml/badge.svg)
 ![license](https://img.shields.io/github/license/dengbin21/mcd-profile)
+![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 
 > **Find the most cost-effective order before you eat — then review every order you've ever eaten.**
 >
@@ -17,13 +19,15 @@
 > And try "when do my coupons expire, will they make it to the next campaign?" — it tells you exactly
 > which coupons won't survive until that day.
 
-This is an **Agent Skill**. The product's source code is **a single file: `SKILL.md`** — its
-instructions are read by your **host AI agent** (WorkBuddy / Codex / any client that supports Skills +
-MCP), which talks directly to the official McDonald's MCP (`mcd-mcp`, 20 read-only tools) to do all
-the work. Which means:
+This is an **Agent Skill**: `SKILL.md` defines the workflow and triggers, while the **deterministic
+algorithms live in the bundled `src/` code** (coupon parsing / combo enumeration / rating / date
+parsing / 6-dimension portrait / persona detection), which your **host AI agent** (WorkBuddy / Codex /
+any client that supports Skills + MCP) **reuses instead of re-implementing on every session**. All data
+comes from the official McDonald's MCP (`mcd-mcp`, 20 read-only tools). Which means:
 
-- **One file to install**: drop `SKILL.md` into your client's skills directory and it works;
-- No need to clone the repo, install Python, or bring any model key;
+- **One directory to install**: drop this package (`SKILL.md` + `src/`) into your client's skills
+  directory and it works — no extra Python setup needed;
+- The algorithms are implemented and covered by **103 offline self-tests** — reproducible and reliable;
 - Read-only first: solving / preheating / archiving only call query tools — no coupon claiming, no
   lottery, no ordering;
 - The only write operation, `create-order`, is an **optional ordering loop, off by default**, and
@@ -44,14 +48,15 @@ the work. Which means:
 | 3 | **Budget × calorie dual constraints** | One sentence satisfies both "stay under budget" and "stay under calorie limit"; calories are matched against the official nutrition database with honest coverage reporting — unmatchable items are treated as a lower bound, never wrongly killed |
 | 4 | **Preheat desk: which coupons won't survive until the next campaign** | Coupon expiry × campaign calendar are **crossed**, and conflicts are *computed*, not copywritten — most savings Skills never cross these two datasets |
 | 5 | **One closed loop: before eating → after eating** | A single `preheat → solve → eat → archive` timeline; every entry point hands you the "next step" command, no one gets stuck halfway |
-| 6 | **Honest scope, read-only first** | The only write `create-order` is off by default and needs explicit confirmation; `order-list` returns only the latest ~10 orders, positioned as "review" not "annual statement" |
+| 6 | **Algorithm-backed, reproducible results** | Coupon parsing / enumeration / rating / dates / portrait / persona are implemented in `src/` with 103 offline self-tests — the host agent reuses them instead of re-writing each session, so the same rules yield the same result; read-only first, the only write `create-order` is off by default and needs explicit confirmation |
 
 ---
 
 ## Quick start (2 steps)
 
-1. **Install the file**: drop `SKILL.md` into your client's (WorkBuddy / Codex etc.) skills
-   directory — this is the only file the product needs.
+1. **Install the package**: drop this repo (`SKILL.md` + `src/` algorithm code) into your client's
+   (WorkBuddy / Codex etc.) skills directory — the host agent will reuse the deterministic
+   algorithms in `src/`; no extra Python setup needed.
 2. **Configure the official McDonald's MCP** (one-time): get a Token at
    **https://open.mcd.cn/mcp**, then add an entry to your client's MCP config (WorkBuddy
    `~/.workbuddy/mcp.json` example):
@@ -155,17 +160,30 @@ Translate your order history into a personal profile you can read and share:
 
 ```
 mcd-profile/
-├── SKILL.md                ★ Product source code (the only file needed: triggers / plays / tool mapping / safety)
+├── SKILL.md                ★ Skill definition (triggers / plays / tool mapping / safety) — the "brain" for the host agent
+├── src/                    ★ Deterministic algorithm code (reused by the host agent, see SKILL.md "algorithm code")
+│   ├── solver.py           McSolve: coupon parsing / enumeration pruning / selection / rating
+│   ├── preheat.py          McPreheat: date parsing / conflict detection / readiness scoring
+│   ├── analysis.py         archive 6-dimension portrait
+│   ├── persona.py          McPersona detection (with no-order fallback)
+│   ├── nutrition.py        nutrition matching
+│   ├── models.py           domain models + response parsing + unit conversion
+│   └── ...(rendering / copy layer, for verification & output generation)
+├── tests/                  103 offline self-tests (evidence of algorithm reliability)
+├── data/                   anonymized samples
 ├── README.md / README_EN.md   Usage docs (Chinese / English)
-├── MCP_INTEGRATION.md      McDonald's MCP integration reference (optional)
+├── MCP_INTEGRATION.md      McDonald's MCP integration reference
 ├── CONTEST_DECLARATION.md  Contest declaration
 ├── workbuddy.md            WorkBuddy dev context (contest verification)
 ├── LICENSE                 MIT license
 └── docs/demo-card.png      Example output (README hero image)
 ```
 
-> This product needs no scripts or local code — everything is done by the `SKILL.md` instructions +
-> the official `mcd-mcp` service. One file to install.
+> Architecture: `SKILL.md` describes the workflow; **deterministic logic (coupon parsing /
+> enumeration / rating / dates / portrait / persona) is carried by the `src/` code** — the host agent
+> reuses those functions instead of re-implementing them every session, so results are reproducible.
+> To run the code, read the matching file under `src/` and execute it in your tool environment;
+> the 103 self-tests can be verified with `python -m pytest tests/ -q`.
 
 ## License
 

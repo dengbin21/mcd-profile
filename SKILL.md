@@ -1,9 +1,9 @@
 ---
 name: mcd-profile
-version: 2.0.1
+version: 2.1.0
 display_name: "麦麦战绩"
 display_name_en: "McProfile"
-description: "围绕麦当劳官方 MCP 的一套「吃之前 → 吃之后」闭环：McSolve 先用官方 calculate-price 反复验价，算出这一单怎么点最划算（全程只读、不产生订单）；McPreheat 把活动日历和券到期日交叉，告诉你哪些券等不到活动那天；吃完再用 archive 把每一单变成『消费 × 省钱 × 健康 × 权益』复盘 + 麦门人格卡。用于『这单怎么点最划算 / 我的券什么时候到期、赶得上活动吗 / 我在麦当劳花了/省了多少、吃了多少热量 / 我的麦门人格 / 帮我点一份』等场景。依赖 mcd-mcp MCP 服务，覆盖官方 20 个只读工具 +（可选、默认关闭）1 个下单工具。"
+description: "围绕麦当劳官方 MCP 的一套「吃之前 → 吃之后」闭环：McSolve 先用官方 calculate-price 反复验价，算出这一单怎么点最划算（全程只读、不产生订单）；McPreheat 把活动日历和券到期日交叉，告诉你哪些券等不到活动那天；吃完再用 archive 把每一单变成『消费 × 省钱 × 健康 × 权益』复盘 + 麦门人格卡。用于『这单怎么点最划算 / 我的券什么时候到期、赶得上活动吗 / 我在麦当劳花了/省了多少、吃了多少热量 / 我的麦门人格 / 帮我点一份』等场景。依赖 mcd-mcp MCP 服务，覆盖官方 20 个只读工具 +（可选、默认关闭）1 个下单工具。确定性算法（券解析/枚举/评级/日期/画像/人格）由本包 `src/` 代码承载，宿主 agent 复用而非每次重写。"
 license: MIT
 ---
 
@@ -17,10 +17,28 @@ license: MIT
 - **吃之后 · archive**：把每一单翻译成看得懂、晒得出的**六维复盘 + 麦门人格卡**；
 - **（可选）点餐闭环**：默认 dry-run，须显式确认才会真正下单。
 
-所有数据均通过 **`mcd-mcp` MCP 服务** 获取，宿主 agent 直连即可，**不需要 clone 仓库**。
+所有数据均通过 **`mcd-mcp` MCP 服务** 获取；**确定性算法随包提供**（`src/`，见下）。
 除数值外的**全部展示文字**可由 **WorkBuddy（宿主 agent）** 生成，无需任何外部模型 Key。
 
 ⭐ **仓库**：https://github.com/dengbin21/mcd-profile
+
+## 算法代码承载：复用 `src/`，不要每次重写
+
+券解析、组合枚举、评级、日期解析、冲突评分、六维画像、人格判定这类**确定性逻辑**，
+如果宿主 agent 每次按文本规则**现场重新实现**，同一套逻辑每个会话写一遍、结果不可复现、
+还容易踩正则 / 单位 / 日期解析的坑。本 Skill 已用 `src/` 把这些逻辑**实现并测试**，
+宿主 agent **直接复用对应函数**（读取文件理解实现、在环境中执行），**不要重新发明**：
+
+| 玩法 | 复用的函数 |
+|---|---|
+| **McSolve** | `solver.parse_coupons()` 券规则解析 / `solver.enumerate_candidates()` 枚举剪枝 / `solver.is_better()` 选优 / `solver.grade_of()` 评级 |
+| **McPreheat** | `preheat.parse_when()` 活动日期 / `preheat.parse_until()` 券到期（区间取结束日） / `preheat.score_of()` 备战度评分 |
+| **archive** | `analysis.analyze_*()` 六维画像 / `persona.build_persona()` 人格判定 / `nutrition.NutritionIndex()` 营养匹配 |
+| **通用** | `models.parse_*()` 响应字段解析；`calculate-price` 金额单位是**分**、`order-list` 的 `realTotalAmount` 是**元字符串**——方向相反，代码统一处理 |
+
+> 各玩法步骤里的「用 `xxx`」即指读取 `src/xxx.py` 复用其函数；算法自带 103 项离线自测，
+> 可作为可靠性依据。若运行环境没有 Python，至少**照着 `src/` 的实现口径执行**，
+> 不要凭印象改规则。
 
 ## 何时触发
 
@@ -120,16 +138,21 @@ list-nutrition-foods  最优解的营养
 
 ### 可复现求解步骤（宿主 agent 照此执行）
 
+确定性逻辑**复用 `src/solver.py`**，不要每个会话重新实现：
+
 1. 取菜单（`query-meals`）+ 三层券（`query-my-coupons` / `query-store-coupons` /
    `available-coupons`）；
-2. 从券面文案解析规则：满减（`满X减Y`）、件数折扣（`N件Z折`，含中文数字「三」）、
-   免费（`免费X`）、买一送一（`X买一送一`）；解析不出的按 `unknown` 处理，**不瞎估**；
-3. 本地枚举：必选 + 追加 0..3 件，按预算（留 25% 余量）与热量下界剪枝，
-   按粗估省钱率排序；
+2. 券规则解析：**调 `solver.parse_coupons(券面标题列表)`**——满减（`满X减Y`）、件数折扣
+   （`N件Z折`，含中文数字「三」）、免费（`免费X`）、买一送一（`X买一送一`）都已处理；
+   解析不出的按 `unknown` 处理，**不瞎估**；
+3. 本地枚举：**调 `solver.enumerate_candidates(...)`**——必选 + 追加 0..3 件，按预算
+   （留 25% 余量）与热量下界剪枝，超限**整层收敛**（`MAX_ENUM=20000`），按粗估省钱率排序；
 4. 只对 **Top 30** 候选调 `calculate-price` 逐单验真实价（并发，失败计入 `fail_count`
    不拖垮其余候选）；
-5. 以「省钱率优先、同率取实付更低」选最优；首个候选恒为「只点必选」= 直觉点法对照；
-6. 评级、营养（`list-nutrition-foods`）、战报长图。
+5. 选优：**用 `solver.is_better()`**（省钱率优先、同率取实付更低）；首个候选恒为
+   「只点必选」= 直觉点法对照；
+6. 评级：**用 `solver.grade_of()`**（S≥45% / A≥30% / B≥15% / C），再补营养
+   （`list-nutrition-foods`）、战报长图。
 
 ## 二、McPreheat：活动日历 × 券到期日的交叉冲突
 
@@ -143,7 +166,10 @@ now-time-info       服务器时间（倒计时与「今天」的锚点）
 产出倒计时 + 冲突清单 + **备战度 S/A/B/C**（扣分重、加分轻，避免「有冲突却评 S」的自相矛盾；
 **临期扣分封顶 3 张**——手里一堆临期券是弹药足，不是「裸奔进场」）。
 
-券的到期文案有两个**真实接口踩出来**的坑，按下面口径处理：
+**实现复用 `src/preheat.py`**：活动日期解析用 `parse_when()`，券到期解析用 `parse_until()`
+（区间取结束日），冲突判定与备战度用 `build_preheat()` / `score_of()`——**不要手写日期解析**。
+
+券的到期文案有两个**真实接口踩出来**的坑，按下面口径处理（`parse_until()` 已实现）：
 
 - **区间写法**（`2026.10.05-2026.10.11`）按**结束日**算到期：取第一段会把
   「明天到期」判成「5 天前已过期」，凭空多出一条根本不存在的冲突；
@@ -212,6 +238,11 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 | 🎭 **麦门人格** | 按行为特征生成人格标签（如「优惠猎人 / 早餐仪式感大师 / 深夜加餐党」）+ 六维雷达 |
 
 外加一份**MCP 工具覆盖清单**，让「用了多少 MCP 能力」看得见。
+
+**实现复用 `src/analysis.py` + `src/persona.py` + `src/nutrition.py`**：六维画像用
+`analysis.analyze_consumption / analyze_health / analyze_benefit / analyze_savings /
+analyze_habit / analyze_activity`，营养匹配用 `nutrition.NutritionIndex()`，人格判定用
+`persona.build_persona()`（含无订单兜底）——下面两张表是这些函数的规则 ground truth。
 
 **千人千面**：人格 → 一整套深色潮酷配色 + Slogan，
 **同一份档案，不同的人打开是不同的那张海报**；分享产物为**竖版长图**（朋友圈/小红书比例）。

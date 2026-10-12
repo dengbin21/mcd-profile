@@ -1,0 +1,216 @@
+{
+  "account": {
+    "availablePoint": "1320.1",
+    "accumulativePoint": "34703.1",
+    "usedPoint": "33383",
+    "expiredPoint": "0",
+    "lastMouthExpirePoint": "0"
+  },
+  "coupons": [
+    {
+      "title": "免费香芋派",
+      "instructions": {
+        "labels": [
+          {
+            "text": "外送"
+          }
+        ],
+        "availableTime": [
+          {
+            "text": "2026.10.16 23:59"
+          },
+          {
+            "text": "到期"
+          }
+        ]
+      }
+    },
+    {
+      "title": "满30减5元券",
+      "instructions": {
+        "labels": [
+          {
+            "text": "到店"
+          }
+        ],
+        "availableTime": [
+          {
+            "text": "2026.10.12 23:59"
+          },
+          {
+            "text": "到期"
+          }
+        ]
+      }
+    },
+    {
+      "title": "免费中薯条",
+      "instructions": {
+        "labels": [
+          {
+            "text": "到店"
+          }
+        ],
+        "availableTime": [
+          {
+            "text": "2026.12.01 23:59"
+          },
+          {
+            "text": "到期"
+          }
+        ]
+      }
+    }
+  ],
+  "prizes": [
+    {
+      "name": "下单立减3元券",
+      "prizeTypeText": "优惠券",
+      "statusText": "已失效",
+      "recordTime": "2026-09-25 12:10:30"
+    },
+    {
+      "name": "寒露限定门票",
+      "prizeTypeText": "门票",
+      "statusText": "可用",
+      "recordTime": "2026-10-08 08:44:20"
+    }
+  ],
+  "mallOrders": [
+    {
+      "orderStatusTitle": "已完成",
+      "goods": [
+        {
+          "spuName": "麦当劳联名复古棒球帽-积分优先购",
+          "points": "24"
+        }
+      ]
+    },
+    {
+      "orderStatusTitle": "已完成",
+      "goods": [
+        {
+          "spuName": "麦麦农场鲜鸡蛋",
+          "points": "100"
+        }
+      ]
+    },
+    {
+      "orderStatusTitle": "已过期",
+      "goods": [
+        {
+          "spuName": "为随心配五大巨星应援",
+          "skuName": "麦香鱼",
+          "points": "1"
+        }
+      ]
+    },
+    {
+      "orderStatusTitle": "已完成",
+      "goods": [
+        {
+          "spuName": "枫糖风味厚松饼猪柳蛋堡",
+          "points": "100"
+        }
+      ]
+    }
+  ],
+  "lottery": {
+    "activityName": "麦麦积分抽奖",
+    "activityStatusText": "进行中",
+    "endTime": "2030-12-31 23:59:59",
+    "drawPoint": "24",
+    "availablePoint": "1320.1",
+    "drawDecision": {
+      "resourceEligible": true,
+      "nextConsumption": {
+        "type": "POINTS",
+        "points": "24"
+      }
+    },
+    "prizes": [
+      {
+        "name": "下单立减3元券"
+      },
+      {
+        "name": "下单立减2元券"
+      },
+      {
+        "name": "麦辣三件套5折券"
+      },
+      {
+        "name": "麦旋风5折券"
+      },
+      {
+        "name": "30积分"
+      },
+      {
+        "name": "免费脆薯饼"
+      }
+    ]
+  },
+  "availableCoupons": [
+    {
+      "couponName": "免费脆薯饼",
+      "couponStatus": "CAN_RECEIVE",
+      "label": "可领取"
+    },
+    {
+      "couponName": "麦旋风任选",
+      "couponStatus": "HAVING_RECEIVE",
+      "label": "已领取"
+    },
+    {
+      "couponName": "9.9元早餐两件套",
+      "couponStatus": "CAN_RECEIVE",
+      "label": "可领取"
+    }
+  ],
+  "redeemProducts": [
+    {
+      "spuName": "麦麦农场鲜鸡蛋",
+      "spuId": "5001",
+      "point": "100",
+      "price": "0",
+      "catName": "实物商品",
+      "shopId": "2",
+      "selling": "6枚装"
+    },
+    {
+      "spuName": "18.8元2份麦辣鸡翅",
+      "spuId": "6113",
+      "point": "200",
+      "price": "18.8",
+      "catName": "商品券",
+      "shopId": "2",
+      "selling": "到店自取"
+    },
+    {
+      "spuName": "16.9元麦辣可乐组合",
+      "spuId": "17079",
+      "point": "500",
+      "price": "16.9",
+      "catName": "商品券",
+      "shopId": "2",
+      "selling": "超值组合"
+    },
+    {
+      "spuName": "21.9元巨无霸可乐组合",
+      "spuId": "17081",
+      "point": "800",
+      "price": "21.9",
+      "catName": "商品券",
+      "shopId": "2",
+      "selling": "经典搭配"
+    },
+    {
+      "spuName": "麦当劳联名复古棒球帽",
+      "spuId": "18192",
+      "point": "1600",
+      "price": "0",
+      "catName": "周边产品",
+      "shopId": "2",
+      "selling": "限量周边"
+    }
+  ]
+}

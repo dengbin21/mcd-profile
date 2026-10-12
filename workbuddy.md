@@ -3,11 +3,11 @@
 > 本文记录使用 **WorkBuddy** 开发「麦麦战绩 McProfile」过程中的关键对话与决策，
 > 用于核验是否符合 WorkBuddy 联动活动奖励条件。
 
-> ⚠️ **仓库形态说明（2026-10-12）**：本仓库为「纯 Skill 包」——产品源代码是
-> `SKILL.md` 单文件（宿主 agent 照其指令直接调官方 `mcd-mcp` 完成全部功能）。
-> 早期开发的本地实现（`src/` / `tests/` / `data/`）、CLI（`src/cli.py` / `menu_view.py`）
-> 与离线落地页（`site/`）、样例产物（`examples/`）均已移除，不依赖任何脚本或本地代码。
-> 对外使用方式只有 Skill（见 `README.md`）。
+> ⚠️ **仓库形态说明（2026-10-12）**：本仓库为「SKILL.md + 算法代码」形态——`SKILL.md`
+> 定义工作流与触发规则，**确定性算法（券解析/枚举/评级/日期/画像/人格）由 `src/` 代码承载**，
+> 宿主 agent 复用而非每个会话重新实现，保证结果可复现（见 `SKILL.md`「算法代码承载」）。
+> CLI（`src/cli.py` / `menu_view.py`）与离线落地页（`site/`）、样例产物（`examples/`）已移除；
+> 验证入口是 `python -m pytest tests/`（103 项）。对外使用方式只有 Skill（见 `README.md`）。
 > 下文「可复现的验证命令」中 `python -m src.cli ...` 属开发历史，当前仓库不提供 CLI。
 
 ## 一、项目背景
