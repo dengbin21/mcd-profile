@@ -7,22 +7,9 @@ CTA 间距、评分徽章尺寸也各不相同。摆在一起看像两个产品�
 这里抽出公共外壳，两张卡片共用同一套设计语言；各自的
 主视觉（战报的价格区 / 预热台的倒计时区）仍留在自己模块里。
 
-配色取自 ``src.theme`` 的「优惠猎人」（麦当劳品牌金），与既有档案卡片同族。
+配色沿用 ``src.theme`` 的「优惠猎人」（麦当劳品牌金）家族，与档案卡片同族。
 """
 from __future__ import annotations
-
-from ..theme import THEMES
-
-_BRAND = THEMES.get("优惠猎人", next(iter(THEMES.values())))
-
-INK = _BRAND.ink            # 主文字
-MUTED = _BRAND.muted        # 次文字
-PRIMARY = _BRAND.primary    # 主强调（品牌金）
-ACCENT = _BRAND.accent      # 次强调
-
-BG = "#0B0A08"              # 页面底色
-PANEL = "#12100C"           # 面板
-PANEL_IN = "#1A1710"        # 面板内嵌块
 
 REPO_URL = "https://github.com/dengbin21/mcd-profile"
 

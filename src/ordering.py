@@ -48,10 +48,6 @@ class OrderingSession:
     take_way_code: str = ""      # 由 calculate-price 的 takeWayList 决定
     cart: list[CartItem] = field(default_factory=list)
 
-    @property
-    def mode_text(self) -> str:
-        return {1: "到店取餐", 2: "麦乐送到家", 5: "得来速", 6: "企业团餐"}.get(self.be_type, "到店取餐")
-
 
 # ---------------------------------------------------------------------- #
 # 菜单 / 商品

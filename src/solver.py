@@ -285,10 +285,6 @@ class Solution:
         return round(self.discount / self.original, 3) if self.original else 0.0
 
     @property
-    def item_names(self) -> list[str]:
-        return [i.name or i.product_code for i in self.items]
-
-    @property
     def count(self) -> int:
         return len(self.items)
 
