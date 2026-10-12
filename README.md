@@ -1,5 +1,7 @@
 # 麦麦战绩 · McProfile（Skill）
 
+[中文](./README.md) | [English](./README_EN.md)
+
 > **先替你算出最划算的那一单，再帮你复盘吃过的每一单。**
 >
 > 对 AI 说一句「我想吃板烧鸡腿堡，怎么点最划算」，它就穷举上千种组合、
@@ -23,6 +25,8 @@
 能逐行核对算法；**但使用本 Skill 用不到它们**。
 
 ⭐ **觉得有意思？给个 Star 就是最大的支持 → [github.com/dengbin21/mcd-profile](https://github.com/dengbin21/mcd-profile)**
+
+![演示产物：麦门人格卡（竖版长图 1080×2063，离线样例一键生成）](./docs/demo-card.png)
 
 ---
 
@@ -140,11 +144,13 @@ list-nutrition-foods  最优解的营养
 ```
 mcd-profile/
 ├── SKILL.md                # Skill 定义（本产品本体：触发表 / 玩法 / 工具映射 / 安全）
-├── README.md               # 本文档（怎么用）
+├── README.md               # 本文档（中文，怎么用）
+├── README_EN.md            # 本文档（英文版）
 ├── MCP_INTEGRATION.md      # 麦当劳 MCP 集成说明（Server / Tool / 调用流程 / 业务价值）
 ├── CONTEST_DECLARATION.md  # 参赛声明（官方原文，未改动）
 ├── workbuddy.md            # WorkBuddy 开发对话上下文（联动奖励核验用）
 │
+├── docs/                   # 演示产物（如 demo-card.png）
 ├── src/                    # ★ 可复现实现（报名「源代码」；使用 Skill 用不到）
 │   ├── solver.py           #   McSolve：券规则解析 + 组合枚举 + Top-30 验价 + 双约束
 │   ├── preheat.py          #   McPreheat：活动×券到期冲突 + 备战度
