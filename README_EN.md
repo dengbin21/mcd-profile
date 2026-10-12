@@ -2,6 +2,10 @@
 
 [中文](./README.md) | [English](./README_EN.md)
 
+![tests](https://github.com/dengbin21/mcd-profile/actions/workflows/tests.yml/badge.svg)
+![license](https://img.shields.io/github/license/dengbin21/mcd-profile)
+![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
+
 > **Find the most cost-effective order before you eat — then review every order you've ever eaten.**
 >
 > Tell your AI agent "I want a McChicken, how do I order it to save the most?" and it enumerates
@@ -180,10 +184,12 @@ mcd-profile/
 ├── SKILL.md                # Skill definition (the product itself: triggers / plays / tool mapping / safety)
 ├── README.md               # This doc (how to use) — Chinese
 ├── README_EN.md            # This doc — English
+├── LICENSE                 # MIT license
 ├── MCP_INTEGRATION.md      # McDonald's MCP integration (Server / Tool / call flows / business value)
 ├── CONTEST_DECLARATION.md  # Contest declaration (official text, unchanged)
 ├── workbuddy.md            # WorkBuddy dev conversation context (linked reward verification)
 │
+├── .github/workflows/      # CI: runs the 103 self-tests (tests.yml)
 ├── docs/                   # Demo assets (demo-card.png / demo-solve.md / demo-preheat.md)
 ├── scripts/demo.py         # Zero-token offline demo: regenerates the docs/ outputs in one command
 ├── src/                    # ★ Reproducible implementation (contest "source code"; not needed to use the Skill)
