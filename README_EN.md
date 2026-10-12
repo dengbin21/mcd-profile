@@ -81,6 +81,27 @@ don't need any of it to use this Skill.**
 | "How much did I spend/save at McDonald's" / "What's my McPersona" | **archive**: `order-list` → 6-dimension portrait + persona card |
 | "Order me a…" | Ordering loop (dry-run by default, needs explicit confirmation) |
 
+## Try it now: zero-token demo (30 seconds)
+
+No token, no network — the bundled anonymized samples can produce the real outputs of all three
+plays with one command:
+
+```bash
+pip install -r requirements.txt
+python scripts/demo.py
+```
+
+Outputs land in `docs/`:
+
+| Output | What it is |
+|---|---|
+| `demo-card.png` | McPersona card (the vertical long image at the top of this page) |
+| `demo-solve.md` | McSolve report (your gut order vs. the algorithm's optimum) |
+| `demo-preheat.md` | McPreheat card (coupon expiry × campaign conflicts) |
+
+Run the self-tests: `python -m pytest tests/` (103 tests). Demo prices are local estimates from the
+bundled samples; online, every price is verified by the official `calculate-price`.
+
 ## The three signature plays
 
 ### ① McSolve · the "McOptimal" solver (before eating)
@@ -100,7 +121,7 @@ list-nutrition-foods   nutrition for the optimal solution
 - The primary metric is **savings rate**, not lowest amount payable — otherwise the solver degrades
   into "persuading you to order less";
 - Local estimation is only for ranking; **the final price always comes from official verification**;
-- Supports **budget × calorie dual constraints** (`--budget` caps payable, `--kcal` caps calories);
+- Supports **budget × calorie dual constraints** (one sentence caps both payable and calories);
 - Outputs "your gut order vs. algorithm optimum" comparison + S/A/B/C rating + report long-image.
 
 ### ② McPreheat · the preheat desk (before eating)
@@ -163,7 +184,8 @@ mcd-profile/
 ├── CONTEST_DECLARATION.md  # Contest declaration (official text, unchanged)
 ├── workbuddy.md            # WorkBuddy dev conversation context (linked reward verification)
 │
-├── docs/                   # Demo assets (e.g. demo-card.png)
+├── docs/                   # Demo assets (demo-card.png / demo-solve.md / demo-preheat.md)
+├── scripts/demo.py         # Zero-token offline demo: regenerates the docs/ outputs in one command
 ├── src/                    # ★ Reproducible implementation (contest "source code"; not needed to use the Skill)
 │   ├── solver.py           #   McSolve: coupon rule parsing + combo enumeration + Top-30 verification + dual constraints
 │   ├── preheat.py          #   McPreheat: campaign × coupon-expiry conflicts + readiness

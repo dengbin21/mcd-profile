@@ -40,11 +40,11 @@ def _explain(exc: "requests.HTTPError", name: str) -> McpError:
         return McpAuthError(
             f"mcd-mcp 拒绝了这次调用（HTTP {status}）：Authorization 头缺失、无效或已过期。\n"
             "  · 申请 / 续期 Token：https://open.mcd.cn/mcp\n"
-            "  · 配好后自检：python -m src.cli doctor"
+            "  · 配好后自检：重启客户端，确认 mcd-mcp 已连接（工具列表里有 calculate-price）"
         )
     if status == 429:
         return McpError(
-            f"调用 {name} 失败：HTTP 429 触发限流。McSolve 可用 --workers 调低并发后重试。"
+            f"调用 {name} 失败：HTTP 429 触发限流。可调低验价并发后重试。"
         )
     return McpError(f"调用 {name} 失败：{exc}")
 

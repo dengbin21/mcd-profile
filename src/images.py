@@ -9,8 +9,8 @@ import base64
 import hashlib
 from pathlib import Path
 
-# 默认缓存目录：examples/menu_img/（在 .gitignore 里可忽略）
-CACHE_DIR = Path(__file__).resolve().parent.parent / "examples" / "menu_img"
+# 默认缓存目录：.cache/menu_img/（已进 .gitignore，可安全写入）
+CACHE_DIR = Path(__file__).resolve().parent.parent / ".cache" / "menu_img"
 
 _MIME = {
     ".png": "image/png",

@@ -324,9 +324,9 @@ def is_better(rate: float, paid: float, best_rate: float,
               best_paid: float | None) -> bool:
     """选优判据：**省钱率优先，同率取实付更低**。
 
-    最终选优（:func:`solve`）与 CLI 的验价进度回调**必须共用这一把尺**——
+    最终选优（:func:`solve`）与验价进度的「新最优」通报**必须共用这一把尺**——
     否则进度里宣告的「新的最优」会按实付挑、最终答案却按省钱率挑，
-    两者对不上，进度就变成了噪音（见 ``cli.cmd_solve`` 的 ``on_progress``）。
+    两者对不上，进度就变成了噪音。
     """
     return (best_paid is None
             or rate > best_rate + 1e-9
@@ -363,7 +363,7 @@ def build_pool(menu_items: dict[str, MenuItem], rules: list[CouponRule],
 def effective_max_add(pool_size: int, max_add: int, cap: int = MAX_ENUM) -> int:
     """把 ``max_add`` 收敛到组合数不超过 ``cap`` 的最大可行值。
 
-    ``--add`` 是用户可传的，而 C(24, k) 增长极快（k=5 就 4 万+）。
+    ``max_add`` 是用户可传的，而 C(24, k) 增长极快（k=5 就 4 万+）。
     这里不靠"跑到一半截断"（那会只枚举出靠前的组合、结果有偏），
     而是**事先算好**能完整枚举到第几件，保证剪掉的是整层、不是半层。
     """
@@ -614,17 +614,27 @@ def make_remote_pricer(client, session, menu):
 # ---------------------------------------------------------------------- #
 # 离线验价器（按菜单价 + 券规则本地估算，仅供演示）
 # ---------------------------------------------------------------------- #
-def eat_command(sol: "Solution", store_code: str = "") -> str:
-    """把最优解翻译成一条可直接复制的 ``eat`` 命令——闭环的关键一步。
+def eat_plan(sol: "Solution", store_code: str = "") -> dict:
+    """把最优解翻译成宿主 agent 可直接执行的「下一步点餐计划」——solve→eat 闭环。
 
-    抽成纯函数是为了能脱离网络单测：算完最优解却让用户手抄商品名，
-    是这个玩法最大的断点。
+    CLI 已移除，这里不再产出命令行，而是与官方 ``create-order`` 参数对齐的
+    结构化指令（``storeCode`` / ``items[].productCode|quantity``）。是否真正下单
+    由宿主 agent 按 SKILL.md 护栏执行：先 ``calculate-price`` 算价、再请用户
+    显式确认。无解时返回空 dict（调用方不产出「下一步」）。
     """
     if not sol.items:
-        return ""
-    parts = [f"{i.product_code}:{max(int(i.quantity), 1)}" for i in sol.items]
-    store_flag = f" --store {store_code}" if store_code else ""
-    return f"python -m src.cli eat{store_flag} --items " + " ".join(parts)
+        return {}
+    plan: dict = {
+        "tool": "create-order",
+        "items": [
+            {"productCode": i.product_code, "quantity": max(int(i.quantity), 1)}
+            for i in sol.items
+        ],
+        "guardrail": "调用前先 calculate-price 算价，并请用户显式确认后再下单",
+    }
+    if store_code:
+        plan["storeCode"] = store_code
+    return plan
 
 
 def make_offline_pricer(menu_items: dict[str, MenuItem], rules: list[CouponRule]):

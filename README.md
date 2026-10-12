@@ -73,6 +73,26 @@
 | 「我在麦当劳花了/省了多少钱」「我的麦门人格」 | **archive**：`order-list` → 六维画像 + 人格卡 |
 | 「帮我点一份…」 | 点餐闭环（默认 dry-run，须显式确认才下单） |
 
+## 想先看效果？零 Token 演示（30 秒）
+
+不想申请 Token、不想联网也能先睹为快——仓库自带的脱敏样例可以一键跑出三个玩法的真实产物：
+
+```bash
+pip install -r requirements.txt
+python scripts/demo.py
+```
+
+产物落在 `docs/`：
+
+| 产物 | 说明 |
+|---|---|
+| `demo-card.png` | 麦门人格卡（本文顶部那张竖版长图） |
+| `demo-solve.md` | McSolve 最优解战报（你的直觉 vs 算法最优解对照） |
+| `demo-preheat.md` | McPreheat 预热卡（券到期 × 活动冲突） |
+
+跑自检：`python -m pytest tests/`（103 项）。演示价格为随附样例的本地估算，
+联网后一律以官方 `calculate-price` 验价为准。
+
 ## 三个招牌玩法
 
 ### ① McSolve · 麦麦最优解（吃之前）
@@ -91,7 +111,7 @@ list-nutrition-foods  最优解的营养
 
 - 主指标是**省钱率**而非最低实付——否则求解器会退化成「劝人少买」；
 - 本地估算只用于排序，**最终价格一律以官方验价为准**；
-- 支持**预算 × 热量双约束**（`--budget` 限实付、`--kcal` 限热量）；
+- 支持**预算 × 热量双约束**（一句话同时限定实付与热量上限）；
 - 产出「你的直觉点法 vs 算法最优解」对照 + S/A/B/C 评级 + 战报长图。
 
 ### ② McPreheat · 麦麦预热台（吃之前）
@@ -150,7 +170,8 @@ mcd-profile/
 ├── CONTEST_DECLARATION.md  # 参赛声明（官方原文，未改动）
 ├── workbuddy.md            # WorkBuddy 开发对话上下文（联动奖励核验用）
 │
-├── docs/                   # 演示产物（如 demo-card.png）
+├── docs/                   # 演示产物（demo-card.png / demo-solve.md / demo-preheat.md）
+├── scripts/demo.py         # 零 Token 离线演示：一键重生成 docs/ 三样产物
 ├── src/                    # ★ 可复现实现（报名「源代码」；使用 Skill 用不到）
 │   ├── solver.py           #   McSolve：券规则解析 + 组合枚举 + Top-30 验价 + 双约束
 │   ├── preheat.py          #   McPreheat：活动×券到期冲突 + 备战度

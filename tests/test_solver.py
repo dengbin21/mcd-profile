@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.models import CartItem, MenuItem                                            # noqa: E402
 from src.solver import (                                                   # noqa: E402
-    MAX_ADD_HARD, MAX_ENUM, Solution, build_pool, eat_command,
+    MAX_ADD_HARD, MAX_ENUM, Solution, build_pool, eat_plan,
     effective_max_add, enumerate_candidates, estimate_discount, grade_of, is_better,
     make_offline_pricer, parse_coupons, pick_verify_batch, solve,
 )
@@ -251,7 +251,7 @@ def test_effective_max_add_cap():
 
 
 def test_huge_add_does_not_explode():
-    """用户传 --add 99 时，枚举量必须被钳住，不能把 CPU 跑满。"""
+    """用户传超大 max_add（如 99）时，枚举量必须被钳住，不能把 CPU 跑满。"""
     menu = _menu()
     rules = parse_coupons(["三件任选6折"])
     cands, total = enumerate_candidates(["1001"], menu, rules, max_add=99)
@@ -298,19 +298,29 @@ def test_render_empty_solution():
     assert "没有求出可行组合" in render_solve_html(sol)
 
 
-def test_eat_command_closes_the_loop():
-    """算完最优解必须能直接拿去下单——这是 solve→eat 闭环的断点。"""
+def test_eat_plan_closes_the_loop():
+    """算完最优解必须能直接拿去下单——这是 solve→eat 闭环的断点。
+
+    CLI 已移除：不再输出命令行，而是返回与官方 ``create-order`` 参数对齐的
+    结构化指令（``tool`` / ``storeCode`` / ``items`` / ``guardrail``），由宿主
+    agent 按 SKILL.md 护栏执行。
+    """
     menu, rules = _menu(), parse_coupons(["满30减5元券"])
     sol = solve(["1001"], menu, rules, make_offline_pricer(menu, rules), max_add=2)
     assert sol.items, "前置条件：应当求出解"
 
-    cmd = eat_command(sol, "1990262")
-    assert cmd.startswith("python -m src.cli eat --store 1990262 --items ")
-    for i in sol.items:
-        assert f"{i.product_code}:1" in cmd, f"{i.name} 未出现在下单命令里"
-    # 无门店时也要能跑（用户可让 eat 自己选店）
-    assert eat_command(sol).startswith("python -m src.cli eat --items ")
-    assert Solution() and eat_command(Solution()) == "", "无解时不应产出命令"
+    plan = eat_plan(sol, "1990262")
+    assert plan["tool"] == "create-order", "下一步动作应指向官方下单工具"
+    assert plan["storeCode"] == "1990262"
+    codes = {i["productCode"] for i in plan["items"]}
+    for it in sol.items:
+        assert it.product_code in codes, f"{it.name} 未出现在下单计划里"
+    assert all(i["quantity"] >= 1 for i in plan["items"])
+    # 护栏必须存在：下单前先算价、须用户确认
+    assert "确认" in plan["guardrail"] or "confirm" in plan["guardrail"]
+    # 无门店时省略 storeCode（宿主 agent 可先选店）
+    assert "storeCode" not in eat_plan(sol)
+    assert eat_plan(Solution()) == {}, "无解时不应产出计划"
 
 
 def test_report_discloses_discount_vs_paid_gap():
