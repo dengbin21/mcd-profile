@@ -11,13 +11,16 @@
 >
 > 还有一句「我的券什么时候到期，赶得上下一场活动吗」，告诉你哪些券等不到那天。
 
-这是一个 **Agent Skill**，不是命令行工具、也不是网页应用。它本身不包含任何
-可执行代码——由 **宿主 AI 代理**读取 `SKILL.md` 的指令，直接调用麦当劳官方
-MCP（`mcd-mcp`）的 20 个只读工具完成全部玩法。因此：
+这是一个 **Agent Skill**，核心是一份「大脑」：`SKILL.md` 的指令由 **宿主 AI 代理**读取，
+直接调用麦当劳官方 MCP（`mcd-mcp`）的 20 个只读工具完成全部玩法。因此：
 
 - 用户**不需要 clone 仓库**、不需要装 Python、不需要任何模型 Key；
 - 只读优先：求解 / 预热 / 复盘全部只调用查询类工具，不领券、不抽奖、不下单；
 - 唯一写操作 `create-order` 作为可选点餐闭环，默认关闭、须显式确认。
+
+仓库里同时保留了**可复现实现**（`src/` 算法模块 + `tests/` + 样例数据）——它是同一套
+逻辑的可执行 ground truth（103 项测试），满足赛事「源代码」必交项，也让评委/开发者
+能逐行核对算法；**但使用本 Skill 用不到它们**。
 
 ⭐ **觉得有意思？给个 Star 就是最大的支持 → [github.com/dengbin21/mcd-profile](https://github.com/dengbin21/mcd-profile)**
 
@@ -127,7 +130,27 @@ mcd-profile/
 ├── README.md               # 本文档（怎么用）
 ├── MCP_INTEGRATION.md      # 麦当劳 MCP 集成说明（Server / Tool / 调用流程 / 业务价值）
 ├── CONTEST_DECLARATION.md  # 参赛声明（官方原文，未改动）
-└── workbuddy.md            # WorkBuddy 开发对话上下文（联动奖励核验用）
+├── workbuddy.md            # WorkBuddy 开发对话上下文（联动奖励核验用）
+│
+├── src/                    # ★ 可复现实现（报名「源代码」；使用 Skill 用不到）
+│   ├── solver.py           #   McSolve：券规则解析 + 组合枚举 + Top-30 验价 + 双约束
+│   ├── preheat.py          #   McPreheat：活动×券到期冲突 + 备战度
+│   ├── analysis.py         #   六大画像（消费/健康/权益/省钱/习惯/活动）
+│   ├── persona.py          #   麦门人格引擎（含无订单兜底）
+│   ├── theme.py            #   千人千面主题（人格 → 配色/徽章/金句）
+│   ├── archive.py          #   采集→分析→人格 聚合
+│   ├── sources.py          #   20 个只读工具采集 + 离线样例兜底
+│   ├── models.py           #   领域模型与解析（订单/券/门店/算价/购物车）
+│   ├── nutrition.py        #   营养库与商品名→营养三级匹配
+│   ├── ordering.py         #   点餐链路（选店→富菜单→算价→护栏→下单→复核）
+│   ├── order_text.py       #   点餐话术解析（纯函数）
+│   ├── mcp_client.py       #   极简 MCP Streamable HTTP 客户端
+│   ├── textpack.py         #   文案层（WorkBuddy 在环 + 三道护栏）
+│   ├── images.py           #   商品图工具（下载/内嵌，全程降级）
+│   └── report/             #   渲染：markdown / html / png / tokens（公共设计）
+├── tests/                  # 103 项自测（券解析/求解/预热/人格/文案护栏）
+├── data/                   # 脱敏样例（菜单/订单/权益/营养/活动）
+└── requirements.txt        # 跑可复现实现的依赖
 ```
 
 ## 许可证
