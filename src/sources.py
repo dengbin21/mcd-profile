@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from .models import (
@@ -131,155 +132,35 @@ def _collect_remote(client) -> RawArchive:
         rec(tool, True, int(n) if (count_flag and n) else 0)
         return data
 
-    # ---- 1) 订单域 ------------------------------------------------------ #
+    # 并发执行一组无相互依赖的 (tool, fn, args)；safe 已记录失败，单个失败不中断整体。
+    # 注意：必须先把全部任务 submit 再统一 result()——惰性生成器会退化成串行。
+    def parallel(jobs: list[tuple]) -> None:
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futs = [ex.submit(safe, t, f, a) for t, f, a in jobs]
+            for fut in futs:
+                fut.result()
+
+    # ---- 波 1：无依赖的独立工具（并发）--------------------------------- #
     def _take_orders(d):
         items = _as_order_list(d)
         arch.orders.extend(parse_order(o) for o in items)
         return len(items)
 
-    safe("order-list", _take_orders)
-
-    # 用 query-order 逐单补全「券 / 优惠 / 餐方式 / 门店地址」
-    enriched = 0
-    for o in arch.orders[:MAX_ENRICH]:
-        if not o.order_id:
-            continue
-        def _enr(d, _o=o):
-            if isinstance(d, dict):
-                enrich_order(_o, d)
-                return 1
-            return 0
-        if safe("query-order", _enr, {"orderId": o.order_id}) is not None:
-            enriched += 1
-    # 上面对同一工具多次记账，这里合并为「补全了多少单」
-    if "query-order" in log:
-        log["query-order"]["count"] = enriched
-
-    # ---- 2) 权益域 ------------------------------------------------------ #
-    safe("query-my-account", lambda d: setattr(arch, "account", parse_account(d)) or (1 if d else 0))
-    safe("query-my-coupons", lambda d: (arch.coupons.extend(
-        parse_coupon(c) for c in (d.get("coupons") or [])) or len(arch.coupons)) if isinstance(d, dict) else 0)
-    safe("query-my-prizes", lambda d: (arch.prizes.extend(
-        parse_prize(p) for p in (d.get("prizes") or [])) or len(arch.prizes)) if isinstance(d, dict) else 0)
-    safe("query-lottery-info", lambda d: (setattr(arch, "lottery", parse_lottery(d)) or 1) if isinstance(d, dict) else 0)
-    safe("available-coupons", lambda d: (arch.available_coupons.extend(
-        parse_available_coupon(c) for c in (d or [])) or len(arch.available_coupons)) if isinstance(d, list) else 0)
-
-    # ---- 3) 商城域 ------------------------------------------------------ #
     def _take_mall(d):
         items = _as_mall_list(d)
         arch.mall_orders.extend(parse_mall_order(o) for o in items)
         return len(items)
 
-    safe("mall-order-list", _take_mall)
-
-    # 商城订单详情：补全 createTime / 实付积分
-    if arch.mall_orders:
-        for mo in arch.mall_orders[:MAX_MALL_DETAIL]:
-            if not mo.order_id:
-                continue
-            def _md(d, _mo=mo):
-                if isinstance(d, dict):
-                    _mo.create_time = d.get("createTime", "") or _mo.create_time
-                    _mo.real_points = str(d.get("realTotalPoints", "")) or _mo.real_points
-                    return 1
-                return 0
-            safe("mall-order-detail", _md, {"orderId": mo.order_id})
-    if "mall-order-detail" in log and log["mall-order-detail"]["ok"]:
-        log["mall-order-detail"]["count"] = min(len(arch.mall_orders), MAX_MALL_DETAIL)
-
-    # 积分商城可兑换商品
-    safe("mall-points-products", lambda d: (arch.redeem_products.extend(
-        parse_redeem_product(p) for p in (d or [])) or len(arch.redeem_products)) if isinstance(d, list) else 0)
-
-    # ---- 4) 场景域 ------------------------------------------------------ #
     def _take_stores(d):
         items = _as_order_list(d)
         arch.nearby_stores.extend(parse_store(s) for s in items)
         return len(items)
-
-    safe("query-nearby-stores", _take_stores, {"beType": 1, "searchType": 1})  # searchType=1：收藏餐厅
 
     def _take_addr(d):
         items = (d or {}).get("addresses") or []
         arch.addresses.extend(parse_address(a) for a in items)
         return len(items)
 
-    safe("delivery-query-addresses", _take_addr)
-
-    # 用第一个地址查可配送门店
-    if arch.addresses:
-        aid = arch.addresses[0].address_id
-        def _dqs(d):
-            items = _as_order_list(d)
-            for s in items:
-                info = parse_store(s)
-                if info.code and info.code not in {x.code for x in arch.nearby_stores}:
-                    arch.nearby_stores.append(info)
-            return len(items)
-        safe("delivery-query-stores", _dqs, {"addressId": aid, "beType": 2})
-
-    # 最爱门店：菜单 + 常点 + 门店可用券 + 算价
-    sc, order_type, be_type = _fav_store_params(arch.orders)
-    if sc:
-        params = {"storeCode": sc, "orderType": int(order_type), "beType": int(be_type)}
-
-        def _take_meals(d):
-            if not isinstance(d, dict):
-                return 0
-            freq = d.get("frequent") or {}
-            if freq.get("code"):
-                arch.frequent_meal = MealInfo(code=str(freq["code"]), tags=freq.get("tags", []) or [])
-            n = 0
-            for cat in d.get("categories") or []:
-                for m in cat.get("meals") or []:
-                    arch.favorite_store_meals.append(
-                        MealInfo(code=str(m.get("code", "")), tags=m.get("tags", []) or []))
-                    n += 1
-            return n
-
-        safe("query-meals", _take_meals, params)
-
-        # 常点的名称与组成（第二跳）
-        if arch.frequent_meal and arch.frequent_meal.code:
-            def _mdet(d):
-                if isinstance(d, dict) and d.get("name"):
-                    arch.frequent_meal.name = d.get("name", "")
-                    comps = []
-                    for r in d.get("rounds") or []:
-                        comps.extend(c.get("name", "") for c in (r.get("choices") or []) if c.get("name"))
-                    arch.frequent_meal.components = comps
-                    return 1
-                return 0
-            safe("query-meal-detail", _mdet, {**params, "code": arch.frequent_meal.code})
-
-        def _take_store_coupons(d):
-            items = _as_order_list(d)
-            titles = []
-            for c in items:
-                t = c.get("title", "")
-                if t and t not in titles:
-                    titles.append(t)
-            arch.store_coupons = titles
-            return len(items)
-
-        safe("query-store-coupons", _take_store_coupons, params)
-
-        # 算价：按官方「我的常点」预估当前价格
-        if arch.frequent_meal and arch.frequent_meal.code:
-            def _price(d):
-                if isinstance(d, dict) and d.get("price") is not None:
-                    arch.price_quote = PriceQuote(
-                        product_name=arch.frequent_meal.name or arch.frequent_meal.code,
-                        price=float(d.get("price") or 0),
-                        original_price=float(d.get("originalPrice") or 0),
-                        discount=float(d.get("discount") or 0),
-                    )
-                    return 1
-                return 0
-            safe("calculate-price", _price, {**params, "items": [{"productCode": arch.frequent_meal.code, "quantity": 1}]})
-
-    # ---- 5) 营销域 ------------------------------------------------------ #
     def _take_campaigns(d):
         if not isinstance(d, dict):
             return 0
@@ -300,8 +181,123 @@ def _collect_remote(client) -> RawArchive:
                     n += 1
         return n
 
-    safe("campaign-calendar", _take_campaigns)
-    safe("now-time-info", lambda d: (setattr(arch, "server_time", (d or {}).get("formatted", "")) or 1) if isinstance(d, dict) else 0)
+    parallel([
+        ("order-list", _take_orders, None),
+        ("query-my-account", lambda d: setattr(arch, "account", parse_account(d)) or (1 if d else 0), None),
+        ("query-my-coupons", lambda d: (arch.coupons.extend(
+            parse_coupon(c) for c in (d.get("coupons") or [])) or len(arch.coupons)) if isinstance(d, dict) else 0, None),
+        ("query-my-prizes", lambda d: (arch.prizes.extend(
+            parse_prize(p) for p in (d.get("prizes") or [])) or len(arch.prizes)) if isinstance(d, dict) else 0, None),
+        ("query-lottery-info", lambda d: (setattr(arch, "lottery", parse_lottery(d)) or 1) if isinstance(d, dict) else 0, None),
+        ("available-coupons", lambda d: (arch.available_coupons.extend(
+            parse_available_coupon(c) for c in (d or [])) or len(arch.available_coupons)) if isinstance(d, list) else 0, None),
+        ("mall-order-list", _take_mall, None),
+        ("mall-points-products", lambda d: (arch.redeem_products.extend(
+            parse_redeem_product(p) for p in (d or [])) or len(arch.redeem_products)) if isinstance(d, list) else 0, None),
+        ("query-nearby-stores", _take_stores, {"beType": 1, "searchType": 1}),  # searchType=1：收藏餐厅
+        ("delivery-query-addresses", _take_addr, None),
+        ("campaign-calendar", _take_campaigns, None),
+        ("now-time-info", lambda d: (setattr(arch, "server_time", (d or {}).get("formatted", "")) or 1) if isinstance(d, dict) else 0, None),
+    ])
+
+    # ---- 波 2：依赖波 1 的逐单/逐地址补全（并发）------------------------- #
+    jobs2: list[tuple] = []
+    for o in arch.orders[:MAX_ENRICH]:
+        if not o.order_id:
+            continue
+        def _enr(d, _o=o):
+            if isinstance(d, dict):
+                enrich_order(_o, d)
+                return 1
+            return 0
+        jobs2.append(("query-order", _enr, {"orderId": o.order_id}))
+    for mo in arch.mall_orders[:MAX_MALL_DETAIL]:
+        if not mo.order_id:
+            continue
+        def _md(d, _mo=mo):
+            if isinstance(d, dict):
+                _mo.create_time = d.get("createTime", "") or _mo.create_time
+                _mo.real_points = str(d.get("realTotalPoints", "")) or _mo.real_points
+                return 1
+            return 0
+        jobs2.append(("mall-order-detail", _md, {"orderId": mo.order_id}))
+    if arch.addresses:
+        aid = arch.addresses[0].address_id
+        def _dqs(d):
+            items = _as_order_list(d)
+            for s in items:
+                info = parse_store(s)
+                if info.code and info.code not in {x.code for x in arch.nearby_stores}:
+                    arch.nearby_stores.append(info)
+            return len(items)
+        jobs2.append(("delivery-query-stores", _dqs, {"addressId": aid, "beType": 2}))
+    if jobs2:
+        parallel(jobs2)
+    if "mall-order-detail" in log and log["mall-order-detail"]["ok"]:
+        log["mall-order-detail"]["count"] = min(len(arch.mall_orders), MAX_MALL_DETAIL)
+
+    # ---- 波 3：最爱门店菜单（串行，取「我的常点」code）-------------------- #
+    sc, order_type, be_type = _fav_store_params(arch.orders)
+    if sc:
+        params = {"storeCode": sc, "orderType": int(order_type), "beType": int(be_type)}
+
+        def _take_meals(d):
+            if not isinstance(d, dict):
+                return 0
+            freq = d.get("frequent") or {}
+            if freq.get("code"):
+                arch.frequent_meal = MealInfo(code=str(freq["code"]), tags=freq.get("tags", []) or [])
+            n = 0
+            for cat in d.get("categories") or []:
+                for m in cat.get("meals") or []:
+                    arch.favorite_store_meals.append(
+                        MealInfo(code=str(m.get("code", "")), tags=m.get("tags", []) or []))
+                    n += 1
+            return n
+
+        safe("query-meals", _take_meals, params)
+
+        # ---- 波 4：依赖常点 code 的场景工具（并发）------------------------- #
+        jobs4: list[tuple] = []
+        if arch.frequent_meal and arch.frequent_meal.code:
+            def _mdet(d, _fm=arch.frequent_meal):
+                if isinstance(d, dict) and d.get("name"):
+                    _fm.name = d.get("name", "")
+                    comps = []
+                    for r in d.get("rounds") or []:
+                        comps.extend(c.get("name", "") for c in (r.get("choices") or []) if c.get("name"))
+                    _fm.components = comps
+                    return 1
+                return 0
+            jobs4.append(("query-meal-detail", _mdet, {**params, "code": arch.frequent_meal.code}))
+
+        def _take_store_coupons(d):
+            items = _as_order_list(d)
+            titles = []
+            for c in items:
+                t = c.get("title", "")
+                if t and t not in titles:
+                    titles.append(t)
+            arch.store_coupons = titles
+            return len(items)
+
+        jobs4.append(("query-store-coupons", _take_store_coupons, params))
+
+        if arch.frequent_meal and arch.frequent_meal.code:
+            def _price(d):
+                if isinstance(d, dict) and d.get("price") is not None:
+                    arch.price_quote = PriceQuote(
+                        product_name=arch.frequent_meal.name or arch.frequent_meal.code,
+                        price=float(d.get("price") or 0),
+                        original_price=float(d.get("originalPrice") or 0),
+                        discount=float(d.get("discount") or 0),
+                    )
+                    return 1
+                return 0
+            jobs4.append(("calculate-price", _price,
+                          {**params, "items": [{"productCode": arch.frequent_meal.code, "quantity": 1}]}))
+        if jobs4:
+            parallel(jobs4)
 
     # ---- 汇总日志 ------------------------------------------------------- #
     order = [t for t in TOOL_PLAN if t in log]
@@ -315,7 +311,7 @@ def _collect_remote(client) -> RawArchive:
     return arch
 
 
-# ---------------------------------------------------------------------- #
+
 # 离线样例
 # ---------------------------------------------------------------------- #
 def _collect_sample() -> RawArchive:

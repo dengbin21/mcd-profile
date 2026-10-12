@@ -40,6 +40,17 @@ license: MIT
 > 可作为可靠性依据。若运行环境没有 Python，至少**照着 `src/` 的实现口径执行**，
 > 不要凭印象改规则。
 
+**执行方式（少即是快）——每个玩法只有一个入口，不要散装调工具**：
+
+| 玩法 | 唯一入口 | 说明 |
+|---|---|---|
+| archive（麦门人格 / 复盘） | `archive.build_archive(client)` | 采集 + 六维画像 + 人格**一次完成**；禁止逐个手动调 20 个工具、禁止手工算画像 |
+| McSolve（怎么点最划算） | `solver.solve(must, menu, rules, pricer)` | 内部已并发验价（Top N）；不要自己循环调 `calculate-price` |
+| McPreheat（券赶得上吗） | `preheat.build_preheat(campaigns, coupons, ...)` | 日期解析/冲突/评分一次完成 |
+
+> 同一账号短时间内重复复盘：结果可复用，无需每次重新全量采集；
+> `order-list` 仅返回最近约 10 单，不要幻想拿更多。
+
 ## 何时触发
 
 | 用户说 | 走哪条 |
