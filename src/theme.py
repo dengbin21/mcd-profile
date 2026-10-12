@@ -91,7 +91,7 @@ DEFAULT_THEME = Theme("classic", "麦门门徒", "#0E0C08", "#1C170E", "rgba(255
                       "每一单，都是对麦门的一次朝圣。")
 
 
-def theme_for(persona: "Persona | None", archive: "Archive | None" = None) -> Theme:
+def theme_for(persona: "Persona | None") -> Theme:
     """按人格标签取主题；标签未命中时，用雷达最强维度兜底。"""
     if persona is not None:
         if persona.label in THEMES:

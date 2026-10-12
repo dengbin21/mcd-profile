@@ -7,8 +7,12 @@
 > 定义工作流与触发规则，**确定性算法（券解析/枚举/评级/日期/画像/人格）由 `src/` 代码承载**，
 > 宿主 agent 复用而非每个会话重新实现，保证结果可复现（见 `SKILL.md`「算法代码承载」）。
 > CLI（`src/cli.py` / `menu_view.py`）与离线落地页（`site/`）、样例产物（`examples/`）已移除；
-> 验证入口是 `python -m pytest tests/`（103 项）。对外使用方式只有 Skill（见 `README.md`）。
-> 下文「可复现的验证命令」中 `python -m src.cli ...` 属开发历史，当前仓库不提供 CLI。
+> 验证入口是 `python -m pytest tests/`（**100+ 项，数量以实际输出为准**）。对外使用方式只有 Skill（见 `README.md`）。
+>
+> ⚠️ **关于文中的历史数字**：下文「四、可复现的验证命令」里的 `python -m src.cli ...`、
+> `site/index.html`、`test_site_parity.py` 均**已随 CLI/落地页一起删除**，当前仓库不提供，
+> 只剩开发史记录（已就地标注）；测试数（59 → 119 → 126 → 133）也是**历史峰值**，
+> 删除 CLI 与落地页相关用例后回落到现在的 100+ 项。**以 `pytest` 实际输出为准。**
 
 ## 一、项目背景
 
@@ -54,7 +58,8 @@
    - `src/mcp_client.py`：极简 MCP Streamable HTTP 客户端（兼容 JSON 与 SSE，含调用日志）。
    - `src/models.py`：订单/权益/商城/场景/营销/**点餐**领域模型与解析。
    - `src/sources.py`：订单/权益/商城/场景/营销/营养 **六域 20 个只读工具**采集 + 离线兜底。
-   - `src/nutrition.py`：营养库与「订单商品名 → 营养」三级匹配。
+   - `src/nutrition.py`：营养库与「订单商品名 → 营养」**四级匹配**（归一化精确 → 核心名精确
+     → 包含关系 → 相似度阈值）。
    - `src/analysis.py`：消费 / 省钱 / 健康 / 习惯 / 权益 / 活动 **六大画像**。
    - `src/persona.py`：麦门人格引擎（六维雷达 + 标签）。
    - `src/theme.py`：**千人千面主题引擎**（人格 → 配色/光晕/Slogan + 成就徽章 + 金句）。
@@ -120,44 +125,56 @@
 
 ## 四、可复现的验证命令
 
+> 以下为**当前仓库可直接跑**的命令（CLI 已移除，故无 `python -m src.cli`）。
+
 ```bash
-# 离线自测（无需 Token）
-python tests/test_smoke.py
+# ① 离线自测（无需 Token，纯标准库）
+python -m pytest tests/ -q          # 100+ 项，数量以输出为准
+
+# ② 离线跑通三个玩法（无需 Token，读 data/ 脱敏样例）
+python - <<'PY'
+from src.archive import build_archive
+from src.report import render_markdown, render_card_html
+from src.solver import load_sample_menu, parse_coupons, enumerate_candidates, solve
+from src.preheat import build_preheat
+from src.models import CampaignEvent
+
+a = build_archive()                       # 不传 client → 自动离线样例
+print(render_markdown(a)[:400])
+render_card_html(a, "card.html")          # 长图 PNG 需 matplotlib：from src.report import render_card_png
+
+items, menu = load_sample_menu()          # McSolve 离线样例菜单
+PY
+
+# ③ 联网全链路（需 Token；Token 来自环境变量 MCD_MCP_TOKEN 或客户端 MCP 配置）
+python - <<'PY'
+from src.mcp_client import McdMcpClient
+from src.archive import build_archive
+from src.report import render_card_png
+client = McdMcpClient()                   # 自动按「显式传参 → 环境变量 → MCP 配置文件」找 Token
+a = build_archive(client)
+print(a.meta)                             # 含 tools_called / tools_potential
+render_card_png(a, "card.png")            # 缺 matplotlib 时返回 None → 改交付 HTML 并如实说明
+PY
+```
+
+### 已随 CLI/落地页删除、仅作开发史记录的命令
+
+```bash
+# ❌ 以下均已不可用（CLI 与 site/ 已从仓库移除，保留仅为记录开发过程）
 python -m src.cli demo
-
-# 联网全链路（需 MCD_MCP_TOKEN）
-export MCD_MCP_TOKEN=<你的 Token>
 python -m src.cli archive --html card.html --png card.png
-
-# 文案在环（WorkBuddy 写文案，无需外部 Key）
-python -m src.cli brief --out copy_brief.json
-#   （WorkBuddy 读取 brief 生成 copy_pack.json 后）
-python -m src.cli archive --copy copy_pack.json --html card.html --png card.png
-
-# 点餐闭环（默认安全，只算价不下单）
-python -m src.cli stores
-python -m src.cli menu --store 1990262        # 可视化菜单：带图带价，点选导出 code:qty
-python -m src.cli eat --dry-run
-# 真实下单（会产生真实订单与费用，需自行确认）
-# python -m src.cli eat --yes --items <商品code>:1 --share out.png
-```
-
-### v2.0 新增（可离线复现，无需 Token）
-
-```bash
-# 吃之前：最优解（全程只读，不产生订单）
 python -m src.cli --offline solve --items 板烧鸡腿堡 巨无霸 --top 30
-# 吃之前：活动倒计时 + 券到期冲突 + 备战度
 python -m src.cli --offline preheat
-
-# 文案在环（三个场景分别导出素材）
-python -m src.cli --offline brief --for solve      # 或 --for preheat / --for archive
-python -m src.cli --offline solve --items 板烧鸡腿堡 --copy copy_pack_solve.json
-#   → 键名写错 / 丢占位符 / 编数字 三类错误会被逐条打印并自动回退默认文案
-
-# 全量测试（103 项）
-python -m pytest tests/ -q
+python -m src.cli brief --out copy_brief.json
+python tests/test_site_parity.py          # 落地页与 Python 的同口径护栏（页面已下线）
 ```
+
+文案在环链路（`brief` → `copy_pack.json` → 渲染）**能力仍在**，入口改为直接调函数：
+`textpack.build_copy_brief(archive)` / `textpack.build_preheat_brief(pre)` 取素材 →
+宿主 agent 写 `copy_pack.json` → `textpack.validate_copy_pack(pack)` 校验
+（**必须显式打印告警**）→ 带 `copy=` 调 `report.render_*` / `solve_report.render_solve_*` /
+`preheat_report.render_preheat_*`。
 
 在线体验（免登录）：https://mcsolve.app.workbuddy.host/
 

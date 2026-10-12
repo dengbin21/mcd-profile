@@ -1,19 +1,109 @@
 """mcd-mcp 极简客户端（MCP Streamable HTTP / JSON-RPC 2.0）。
 
-只依赖 requests，封装麦当劳官方 MCP Server 的工具调用，
-供「麦麦战绩」的数据采集与（可选）下单闭环复用。
+**只在真正联网时才需要 `requests`**：本模块对 requests 是**惰性导入**，
+离线算法（券解析 / 枚举 / 日期 / 画像 / 人格）与 Markdown / HTML 产物
+完全不依赖任何第三方包。
+
+Token 的取用顺序与「只配 MCP」一致：显式传参 → 环境变量 ``MCD_MCP_TOKEN``
+→ **客户端的 MCP 配置文件**（见 :func:`token_from_mcp_config`），
+因此宿主 agent 复用 ``src/`` 时不需要再让用户单独导出环境变量。
 """
 from __future__ import annotations
 
 import itertools
 import json
 import os
+import re
 import threading
+from pathlib import Path
 from typing import Any
 
-import requests
-
 DEFAULT_URL = "https://mcp.mcd.cn"
+
+# 常见 MCP 客户端的配置文件位置（按优先级排列）
+CONFIG_CANDIDATES: tuple[str, ...] = (
+    "~/.workbuddy/mcp.json",
+    "~/.workbuddy/.mcp.json",
+    "~/.codebuddy/.mcp.json",
+    "~/.codebuddy/mcp.json",
+    "~/.cursor/mcp.json",
+    ".mcp.json",
+)
+
+# ${VAR} / ${VAR:-default} 形式的占位符
+_PLACEHOLDER_RE = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-[^}]*)?\}$")
+
+
+def _expand(value: Any) -> str:
+    """展开配置里的 ``${ENV}`` 占位符；**展开为空时返回空串**（不把字面量当 Token）。
+
+    历史上踩过这个坑：配置里写 ``${MCD_MCP_TOKEN}`` 而环境变量没设，
+    把字面量原样当 Token 发出去就是 401——宁可跳过这条配置继续找下一个。
+    """
+    if not isinstance(value, str):
+        return ""
+    s = value.strip()
+    m = _PLACEHOLDER_RE.match(s)
+    if m:
+        return (os.environ.get(m.group(1)) or "").strip()
+    return s
+
+
+def token_from_mcp_config() -> tuple[str, str]:
+    """从客户端的 MCP 配置里找 mcd-mcp 的 Token，返回 ``(token, 配置文件路径)``。
+
+    只认「名字或 url 含 mcd」的那条服务；取不到返回 ``("", "")``。
+    配置内容只在本进程内使用，**不落盘、不进产物、不打印**。
+    """
+    for raw in CONFIG_CANDIDATES:
+        path = Path(raw).expanduser()
+        if not path.is_file():
+            continue
+        try:
+            cfg = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        servers = cfg.get("mcpServers") if isinstance(cfg, dict) else None
+        if not isinstance(servers, dict):
+            continue
+        for name, conf in servers.items():
+            if not isinstance(conf, dict):
+                continue
+            url = str(conf.get("url") or "")
+            if "mcd" not in str(name).lower() and "mcd" not in url.lower():
+                continue
+            headers = conf.get("headers") or {}
+            tok = _expand(headers.get("Authorization") or "")
+            if tok.lower().startswith("bearer "):
+                tok = tok[7:].strip()
+            if tok:
+                return tok, str(path)
+    return "", ""
+
+
+def resolve_token(explicit: str | None = None) -> tuple[str, str]:
+    """按「显式传参 → 环境变量 → 客户端配置」取 Token，返回 ``(token, 来源)``。
+
+    来源取值：``"explicit"`` / ``"env:MCD_MCP_TOKEN"`` / 配置文件路径 / ``""``（没找到）。
+    """
+    if explicit:
+        return explicit, "explicit"
+    env = (os.environ.get("MCD_MCP_TOKEN") or "").strip()
+    if env:
+        return env, "env:MCD_MCP_TOKEN"
+    return token_from_mcp_config()
+
+
+def _require_requests():
+    """惰性导入 requests——离线算法路径不需要它。"""
+    try:
+        import requests  # noqa: PLC0415
+    except ImportError as exc:  # pragma: no cover
+        raise McpError(
+            "联网调用 mcd-mcp 需要 requests：`pip install requests`"
+            "（离线算法与 Markdown/HTML 产物不需要它）"
+        ) from exc
+    return requests
 
 
 class McpError(RuntimeError):
@@ -29,7 +119,7 @@ class McpAuthError(McpError):
     """
 
 
-def _explain(exc: "requests.HTTPError", name: str) -> McpError:
+def _explain(exc: Exception, name: str) -> McpError:
     """把 HTTP 状态码翻译成「下一步该做什么」。
 
     401/403 是新手的第一次遭遇（Token 没配或过期），只回状态码等于什么都没说；
@@ -60,7 +150,10 @@ class McdMcpClient:
 
     def __init__(self, url: str = DEFAULT_URL, token: str | None = None, timeout: int = 30):
         self.url = url
-        self.token = token or os.environ.get("MCD_MCP_TOKEN")
+        token, source = resolve_token(token)
+        self.token = token or None
+        # Token 来源只用于自检提示（如 doctor），**不回显 Token 本身**
+        self.token_source = source
         self.timeout = timeout
         self._ids = itertools.count(1)
         # 调用日志：每次 call_tool 记录 {name, ok, error}，供「工具覆盖清单」使用
@@ -97,6 +190,14 @@ class McdMcpClient:
             return next(self._ids)
 
     def _call_tool_once(self, name: str, arguments: dict[str, Any] | None = None) -> Any:
+        requests = _require_requests()
+        if not self.token:
+            # 拿不到 Token 就别发请求——mcd-mcp 只会回一个看不懂的 403
+            raise McpAuthError(
+                "没有可用的 Token（已查：显式传参 / 环境变量 MCD_MCP_TOKEN / 客户端 MCP 配置）。\n"
+                "  · 申请 Token：https://open.mcd.cn/mcp\n"
+                "  · 或把它配进客户端的 mcp.json（`mcd-mcp` → headers.Authorization）"
+            )
         payload = {
             "jsonrpc": "2.0",
             "id": self._next_id(),
@@ -122,7 +223,7 @@ class McdMcpClient:
     # 解析
     # ------------------------------------------------------------------ #
     @staticmethod
-    def _decode(resp: requests.Response) -> dict[str, Any]:
+    def _decode(resp: Any) -> dict[str, Any]:
         """兼容标准 JSON 与 SSE（text/event-stream）两种响应。"""
         ctype = resp.headers.get("Content-Type", "")
         text = resp.text or ""

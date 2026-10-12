@@ -248,12 +248,16 @@ class CampaignEvent:
 
 @dataclass
 class PriceQuote:
-    """算价结果（calculate-price）。"""
+    """算价结果（calculate-price）。
+
+    ⚠️ **单位：分**（与 `order-list` / `query-order` 的 `realTotalAmount`（元）相反，
+    渲染前必须 /100，别混用）。
+    """
 
     product_name: str = ""
     price: float = 0.0          # 分
-    original_price: float = 0.0
-    discount: float = 0.0
+    original_price: float = 0.0  # 分
+    discount: float = 0.0        # 分
     take_way_list: list["TakeWay"] = field(default_factory=list)   # 取餐方式（下单必填 takeWayCode）
 
 

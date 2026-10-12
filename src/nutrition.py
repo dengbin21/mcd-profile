@@ -118,7 +118,12 @@ class NutritionIndex:
             self._by_core.setdefault(_core(f.productName), f)
 
     def match(self, name: str, threshold: float = 0.82) -> Food | None:
-        """三级匹配：归一化精确 → 核心名精确 → 相似度。"""
+        """**四级匹配**：归一化精确 → 核心名精确 → 包含关系 → 相似度阈值。
+
+        第三级（包含关系）是真实数据逼出来的：订单里写「大杯鲜萃咖啡」、
+        营养库里可能只有「鲜萃咖啡」，差一个规格前缀，精确匹配必然落空；
+        这里取**长度最接近**的那条，避免过度泛化。命中率以「覆盖率」如实披露。
+        """
         if not name:
             return None
         n = _norm(name)

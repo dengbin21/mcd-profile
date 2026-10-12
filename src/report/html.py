@@ -114,6 +114,10 @@ def render_card_html(a: Archive, copy: CopyPack | None = None) -> str:
             if hb.frequent_name else "")
     exp = (f'<div class="kv"><span>{html.escape(R("lbl.kv_expiring"))}</span><b style="color:{th.accent}">{len(b.coupons_expiring)} 张</b></div>'
            if b.coupons_expiring else "")
+    # 「再来一单」：官方 calculate-price 的真实算价（不是本地估算）
+    pq = a.raw.price_quote
+    reorder = (f'<div class="kv"><span>{html.escape(R("lbl.reorder_quote", name=pq.product_name, paid=f"{pq.price/100.0:.2f}", orig=f"{pq.original_price/100.0:.2f}"))}</span></div>'
+               if pq and pq.product_name and pq.price else "")
     save_kpi = ""
     if s.enriched_orders and s.total_discount:
         save_kpi = (f'<div class="kpi"><b>-¥{s.total_discount:,.0f}</b>'
@@ -234,7 +238,7 @@ def render_card_html(a: Archive, copy: CopyPack | None = None) -> str:
       <div class="kv"><span>{html.escape(R("lbl.kv_kcal"))}</span><b>{h.total_kcal:.0f} kcal</b></div>
       <div class="kv"><span>{html.escape(R("lbl.kv_bigmac"))}</span><b>{h.bigmac_equiv} 个巨无霸</b></div>
       <div class="kv"><span>{html.escape(R("lbl.kv_sodium"))}</span><b>{h.total_sodium/1000:.1f} g</b></div>
-      {exp}{freq}
+      {exp}{freq}{reorder}
       <div class="kv"><span>{html.escape(R("lbl.kv_point"))}</span><b>{b.available_point:.0f}</b></div>
       <div class="kv"><span>{html.escape(R("lbl.kv_coupon"))}</span><b>{b.coupon_count} 张</b></div>
     </div>

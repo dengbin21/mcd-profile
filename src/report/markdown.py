@@ -12,7 +12,11 @@ from .base import (
 
 
 def _report_markdown(a: Archive, R: TextResolver) -> list[str]:
-    """本次点餐战报（**仅真实下单并支付后**；dry-run 不生成战报）。"""
+    """本次点餐战报（**仅真实下单成功后**；dry-run 不生成战报）。
+
+    注意：本 Skill 不覆盖支付环节，「下单成功」以 `create-order` 返回 `orderId` 为准，
+    不要写成「支付完成后」。
+    """
     r = a.order_report
     if r is None or not r.placed:
         return []
@@ -119,6 +123,12 @@ def render_markdown(a: Archive, copy: CopyPack | None = None) -> str:
         top = "、".join(f"{n}×{v}" for n, v in c.item_dist[:5])
         L.append(f"**{R('lbl.top5')}：** {top}")
         L.append("")
+    # 「再来一单」用官方 calculate-price 的真实算价（不是本地估算）
+    pq = a.raw.price_quote
+    if pq and pq.product_name and pq.price:
+        L.append("> " + R("lbl.reorder_quote", name=pq.product_name,
+                          paid=f"{pq.price / 100.0:.2f}", orig=f"{pq.original_price / 100.0:.2f}"))
+        L.append("")
 
     # —— 省钱画像 ——
     if s.enriched_orders:
@@ -179,6 +189,9 @@ def render_markdown(a: Archive, copy: CopyPack | None = None) -> str:
             L.append(f"- **{R('lbl.avg_items')}：** {hb.avg_items} 件")
         if hb.order_span_days:
             L.append(f"- **{R('lbl.span')}：** {hb.order_span_days} 天")
+        if a.raw.favorite_store_meals:
+            tagged = sum(1 for m in a.raw.favorite_store_meals if m.tags)
+            L.append(f"- **{R('lbl.menu_size', n=len(a.raw.favorite_store_meals), tagged=tagged)}**")
         L.append("")
 
     # —— 权益画像 ——

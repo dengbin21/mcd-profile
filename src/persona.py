@@ -23,6 +23,13 @@ _NEW = ("月堡", "限定", "联名", "新品", "龙焰", "三文鱼", "咸蛋�
 # 雷达六维（无订单兜底时也给出全 0 结构，保持渲染契约）
 RADAR_DIMS = ("早餐魂", "夜宵力", "肉食力", "甜品力", "咖啡力", "省钱力")
 
+# 雷达放大系数：占比 ×130 后截断到 100。
+# 为什么不线性：多数行为占比只有 10%~40%，线性映射到 0~100 会让六根轴全贴底、
+# 图上什么都看不出来。×130 意味着**占比 ≈77% 即打满**，中小占比也能拉开差距。
+# ⚠️ 反过来读：雷达分 ÷ 130 ≈ 真实行为占比。解释给用户时按真实占比说，
+# 不要把「省钱力 94」当成「省了 94%」。
+RADAR_GAIN = 130
+
 
 @dataclass
 class Persona:
@@ -145,19 +152,22 @@ def build_persona(orders: list[Order], cons: Consumption, health: Health,
         tags.append("无肉不欢")
     if new >= 0.2:
         tags.append("新品雷达")
-    if green >= 0.5:
+    if green >= 0.5:                      # 绿灯餐占比 ≥50% 才算克制，否则放纵系
         tags.append("吃得克制")
+    else:
+        tags.append("放纵系")
     if store_count >= 5:
         tags.append("巡店达人")
     else:
         tags.append("就近锁定")
-    if health.lights.get("green", 0) >= len(health.per_order) * 0.5:
-        tags.append("吃得挺克制")
-    else:
-        tags.append("放纵系")
 
     return Persona(label=label, emoji=emoji, one_liner=one_liner, tags=tags, radar=radar)
 
 
 def _pct(ratio: float) -> int:
-    return max(0, min(100, int(round(ratio * 130))))
+    """行为占比 → 雷达分（0~100）。
+
+    **不是线性占比**：做了 ``RADAR_GAIN``（×130）放大后截断，
+    占比 ≈77% 即满分；反向换算 ``score / RADAR_GAIN`` 才是真实占比。
+    """
+    return max(0, min(100, int(round(ratio * RADAR_GAIN))))

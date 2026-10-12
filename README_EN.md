@@ -10,7 +10,7 @@
 >
 > Tell your AI agent "I want a McChicken, how do I order it to save the most?" and it enumerates
 > thousands of combinations, has each one **verified against the official McDonald's `calculate-price`
-> API**, and returns an **S/A/B/C-rated optimal solution + a shareable report card** — all read-only,
+> API**, and returns an **S/A/B/C-rated optimal solution + a solution card** — all read-only,
 > **no order is placed, not a single cent is spent**.
 >
 > After you eat, ask "what's my McPersona" — every order becomes a **one-of-a-kind McPersona card**:
@@ -21,14 +21,15 @@
 
 This is an **Agent Skill**: `SKILL.md` defines the workflow and triggers, while the **deterministic
 algorithms live in the bundled `src/` code** (coupon parsing / combo enumeration / rating / date
-parsing / 6-dimension portrait / persona detection / coupon value lookup), which your **host AI agent**
+parsing / 6-portrait review / persona detection / coupon value lookup), which your **host AI agent**
 (WorkBuddy / Codex / any client that supports Skills + MCP) **reuses instead of re-implementing on
 every session**. All data comes from the official McDonald's MCP (`mcd-mcp`, 20 read-only tools).
 Which means:
 
 - **One directory to install**: drop this package (`SKILL.md` + `src/`) into your client's skills
-  directory and it works — no extra Python setup needed;
-- The algorithms are implemented and covered by **106 offline self-tests** — reproducible and reliable;
+  directory and it works — the offline algorithms, Markdown and HTML output need **Python stdlib only**;
+- The algorithms are implemented and covered by **100+ offline self-tests** (`python -m pytest tests/ -q`;
+  the count follows the actual output) — reproducible and reliable;
 - Read-only first: solving / preheating / archiving only call query tools — no coupon claiming, no
   lottery, no ordering;
 - The only write operation, `create-order`, is an **optional ordering loop, off by default**, and
@@ -49,7 +50,7 @@ Which means:
 | 3 | **Gut vs. optimum + S/A/B/C rating** | Not just the answer, but "where your instinct lost, and what ¥0.4 extra buys you" — educative + persuasive; others only give "recommended vs. alternatives" |
 | 4 | **Silent cost: what expiring coupons are worth** | Each coupon's face value is **looked up from the menu** (threshold = discount / fixed-price = original − price / buy-one-get-one & free = item price), summed as "you have N coupons expiring in 30 days worth ¥Y — not using them is throwing money away"; unparsable coupons are counted as 0 and disclosed, **never fabricated** |
 | 5 | **Budget × calorie dual constraints** | One sentence satisfies both "stay under budget" and "stay under calorie limit"; calories are matched against the official nutrition database with honest coverage reporting — unmatchable items are treated as a lower bound, never wrongly killed |
-| 6 | **Algorithm-backed, reproducible results** | Coupon parsing / enumeration / rating / dates / portrait / persona / coupon value are implemented in `src/` with 106 offline self-tests — the host agent reuses them instead of re-writing each session; read-only first, the only write `create-order` is off by default and needs explicit confirmation |
+| 6 | **Algorithm-backed, reproducible results** | Coupon parsing / enumeration / rating / dates / portrait / persona / coupon value are implemented in `src/` with 100+ offline self-tests — the host agent reuses them instead of re-writing each session; read-only first, the only write `create-order` is off by default and needs explicit confirmation |
 
 ---
 
@@ -57,7 +58,11 @@ Which means:
 
 1. **Install the package**: drop this repo (`SKILL.md` + `src/` algorithm code) into your client's
    (WorkBuddy / Codex etc.) skills directory — the host agent will reuse the deterministic
-   algorithms in `src/`; no extra Python setup needed.
+   algorithms in `src/`.
+   **Honest dependency note**: offline algorithms and Markdown/HTML output use **Python stdlib only**;
+   live data collection needs `requests`, and the **vertical long-image PNG** needs `matplotlib`
+   (`pip install -r requirements.txt`; without matplotlib the card degrades to HTML and says so —
+   it never silently pretends the image exists).
 2. **Configure the official McDonald's MCP** (one-time): get a Token at
    **https://open.mcd.cn/mcp**, then add an entry to your client's MCP config (WorkBuddy
    `~/.workbuddy/mcp.json` example):
@@ -83,8 +88,12 @@ Which means:
 |---|---|
 | "How do I order this cheapest" / "I want X, how to save" | **McSolve**: `query-meals` + `calculate-price` ×30 verified orders |
 | "When do my coupons expire" / "Will they survive the campaign" | **McPreheat**: `campaign-calendar` × coupon expiry |
-| "How much did I spend/save at McDonald's" / "What's my McPersona" | **archive**: `order-list` → 6-dimension portrait + persona card |
-| "Order me a…" | Ordering loop (dry-run by default, needs explicit confirmation) |
+| "How much did I spend/save at McDonald's" / "What's my McPersona" | **archive**: `order-list` → 6-portrait review + persona card |
+| "Order me a…" | Ordering loop (dry-run by default, needs explicit confirmation; the **report long-image** is generated only after the order is really placed) |
+
+> **Two kinds of "card"**: McSolve produces a **solution card** (text / HTML, available in the
+> read-only phase); the **long-image PNG** is reserved for the "after eating" persona card and the
+> "this order report" that follows a **successful real order**.
 
 ## The three signature plays
 
@@ -106,7 +115,8 @@ list-nutrition-foods   nutrition for the optimal solution
   into "persuading you to order less";
 - Local estimation is only for ranking; **the final price always comes from official verification**;
 - Supports **budget × calorie dual constraints** (one sentence caps both payable and calories);
-- Outputs "your gut order vs. algorithm optimum" comparison + S/A/B/C rating + report long-image.
+- Outputs "your gut order vs. algorithm optimum" comparison + S/A/B/C rating + **solution card**
+  (produced in the read-only phase, no order needed).
 
 ### ② McPreheat · the preheat desk (before eating)
 
@@ -118,7 +128,7 @@ Cross the official campaign calendar with **your coupons' expiry dates**:
 - Conflicts are **computed** (coupon expiry < campaign start), not copywritten;
 - Outputs countdown + conflict list + readiness score S/A/B/C + preheat card.
 
-### ③ archive · 6-dimension review + McPersona card (after eating)
+### ③ archive · 6-portrait review + McPersona card (after eating)
 
 Translate your order history into a personal profile you can read and share:
 
@@ -150,8 +160,8 @@ Translate your order history into a personal profile you can read and share:
 - **Ordering is the only write operation and is off by default**: no `create-order` before explicit
   confirmation — only a price preview; before placing an order, list store/items/amount payable;
   keep the `orderId` after a successful order so it can be reversed.
-- **Honest scope**: `order-list` returns only the latest ~10 orders, positioned as "review" not
-  "annual statement"; coupon redemption usually requires the coupon-bound product code (the official
+- **Honest scope**: `order-list` has no pagination and returns only the latest ~10–20 orders
+  (varies per account), positioned as "review" not "annual statement"; coupon redemption usually requires the coupon-bound product code (the official
   wallet API does not return it), so pricing follows the coupon price the official API auto-matches
   per account — this is explicitly disclosed in the online report.
 - **Privacy**: the token lives only in your client's MCP config — never in logs, never in outputs.
@@ -165,7 +175,7 @@ mcd-profile/
 ├── 📦 src/                  ★ Skill core: deterministic algorithm code (reused by the host agent)
 │   ├── solver.py            McSolve: coupon parsing / enumeration pruning / selection / rating
 │   ├── preheat.py           McPreheat: date parsing / conflict detection / readiness scoring
-│   ├── analysis.py          archive 6-dimension portrait
+│   ├── analysis.py          archive 6-portrait review
 │   ├── persona.py           McPersona detection (with no-order fallback)
 │   ├── nutrition.py         nutrition matching
 │   ├── models.py            domain models + response parsing + unit conversion
@@ -173,7 +183,7 @@ mcd-profile/
 ├── 📦 data/                 Skill core: anonymized samples (offline fallback / reproducibility)
 ├── 📦 assets/               Skill core: image assets (assets/logo.png brand logo)
 │
-├── tests/                   Project docs: 103 offline self-tests (algorithm reliability)
+├── tests/                   Project docs: 100+ offline self-tests (algorithm reliability; run pytest to confirm)
 ├── README.md / README_EN.md   Project docs: usage (Chinese / English)
 ├── MCP_INTEGRATION.md       Project docs: McDonald's MCP integration reference
 ├── CONTEST_DECLARATION.md   Project docs: contest declaration
@@ -190,7 +200,7 @@ mcd-profile/
 > enumeration / rating / dates / portrait / persona) is carried by the `src/` code** — the host agent
 > reuses those functions instead of re-implementing them every session, so results are reproducible.
 > To run the code, read the matching file under `src/` and execute it in your tool environment;
-> the 103 self-tests can be verified with `python -m pytest tests/ -q`.
+> verify the self-tests with `python -m pytest tests/ -q` (the count follows the actual output).
 
 ## License
 

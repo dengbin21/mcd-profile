@@ -232,7 +232,11 @@ def place(client: McdMcpClient, session: OrderingSession, cart: list[CartItem],
         )
         placed.status = data.get("orderStatus") or data.get("status") or data.get("orderStatusText", "") or ""
         placed.create_time = data.get("createTime", "") or ""
-        placed.paid = _fen_to_yuan(data.get("price") or data.get("realTotalAmount"))
+        # ⚠️ 单位口径：create-order 的 price 是**分**，query-order 的 realTotalAmount 是**元**。
+        # 两者不能走同一个 /100——命中后者时实付会错 100 倍。
+        raw_price = data.get("price")
+        placed.paid = _fen_to_yuan(raw_price) if raw_price is not None else _yuan(
+            data.get("realTotalAmount"))
     placed.take_way = take_way_code
     if not placed.order_id:
         placed.message = "已提交，但返回中未解析到订单号，请到官方 App 确认。"
@@ -249,7 +253,16 @@ def verify(client: McdMcpClient, order_id: str) -> dict:
 # 工具
 # ---------------------------------------------------------------------- #
 def _fen_to_yuan(v) -> float:
+    """分 → 元（`calculate-price` / `create-order` 的价格字段单位是分）。"""
     try:
         return round(float(v) / 100.0, 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _yuan(v) -> float:
+    """元 → 元（`query-order` / `order-list` 的 realTotalAmount 是元，可能是字符串）。"""
+    try:
+        return round(float(v), 2)
     except (TypeError, ValueError):
         return 0.0

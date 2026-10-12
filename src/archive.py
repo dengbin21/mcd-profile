@@ -127,7 +127,8 @@ def build_archive(client=None, use_remote: bool = True,
             "has_account": raw.account is not None,
             "tools_called": len(called),
             "tools_ok": len(ok),
-            "tools_potential": len(POTENTIAL_TOOLS) + (1 if nsrc == "remote" else 0),
+            # POTENTIAL_TOOLS 已含 list-nutrition-foods（21 个），不要再 +1
+            "tools_potential": len(POTENTIAL_TOOLS),
             "server_time": raw.server_time,
         },
     )

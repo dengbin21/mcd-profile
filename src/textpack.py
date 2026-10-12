@@ -126,6 +126,10 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
     "lbl.fav_item": {"default": "复购最多", "desc": "消费：复购最多"},
     "lbl.slots": {"default": "时段分布", "desc": "消费：时段分布"},
     "lbl.top5": {"default": "常点 TOP5", "desc": "消费：常点 TOP5"},
+    "lbl.reorder_quote": {
+        "default": "再来一单：{name} 官方现价 ¥{paid}（原价 ¥{orig}）",
+        "desc": "消费：常点单品的官方算价（calculate-price 产出，非估算）",
+    },
 
     # ---- 省钱画像 ----
     "lbl.total_original": {"default": "累计原价", "desc": "省钱：累计原价"},
@@ -163,6 +167,10 @@ TEXT_REGISTRY: dict[str, dict[str, str]] = {
     "lbl.weekday": {"default": "消费星期分布", "desc": "习惯：星期分布"},
     "lbl.avg_items": {"default": "单均商品", "desc": "习惯：单均商品"},
     "lbl.span": {"default": "消费跨度", "desc": "习惯：消费跨度"},
+    "lbl.menu_size": {
+        "default": "最爱门店在售 {n} 款（{tagged} 款带官方标签）",
+        "desc": "习惯：最爱门店菜单规模（query-meals 产出）",
+    },
 
     # ---- 权益画像 ----
     "lbl.available_point": {"default": "可用积分", "desc": "权益：可用积分"},

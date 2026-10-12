@@ -1,11 +1,16 @@
-"""五维画像分析：消费 / 健康 / 权益 / 省钱 / 习惯 / 活动。
+"""六大画像分析：消费 / 健康 / 权益 / 省钱 / 习惯 / 活动。
 
 这是「麦麦战绩」的分析核心——把原始订单与权益数据，翻译成可读、可分享的洞察。
+
+术语口径：**六大画像** = 上面这六张；**六维雷达** = 人格的六个维度
+（早餐魂 / 夜宵力 / 肉食力 / 甜品力 / 咖啡力 / 省钱力，见 ``persona.py``）。
+两者不是一回事，文档里不要互相指代。
 """
 from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
+from datetime import date, datetime
 
 from .models import CampaignEvent, MealInfo, Order, RawArchive
 from .nutrition import DAILY_REFERENCE, NutritionIndex
@@ -283,11 +288,45 @@ class Activity:
     upcoming: list[CampaignEvent] = field(default_factory=list)    # 未来
     past_count: int = 0
     server_time: str = ""
+    # 日期解析不出、只能信官方 stage 的条数——口径诚实，不说「没有活动」
+    unparsed_count: int = 0
 
 
-def analyze_activity(campaigns: list[CampaignEvent], server_time: str = "") -> Activity:
+def _activity_today() -> date:
+    return date.today()
+
+
+def analyze_activity(campaigns: list[CampaignEvent], server_time: str = "",
+                     today: date | None = None) -> Activity:
+    """按活动日期归类；``stage`` 只在日期解析不出时兜底。
+
+    与 ``preheat.build_preheat()`` 保持**同一口径**：官方 ``stage`` 字段实测不可靠，
+    一律先按日期判断，否则会出现「档案说今天有活动、预热台说没有下一场」。
+    日期解析不出的条数记入 ``unparsed_count`` 并披露。
+    """
+    from .preheat import parse_when            # 延迟导入：避免与 preheat 形成循环
+
     a = Activity(server_time=server_time)
+    if today is None:
+        if server_time:
+            try:
+                today = datetime.strptime(server_time.split(" ")[0], "%Y-%m-%d").date()
+            except ValueError:
+                today = None
+        if today is None:
+            today = _activity_today()
     for c in campaigns:
+        day = parse_when(c.date or "")
+        if day is not None:
+            if day < today:
+                a.past_count += 1
+            elif day == today:
+                a.current.append(c)
+            else:
+                a.upcoming.append(c)
+            continue
+        # 日期读不懂：回退官方 stage，并计数披露
+        a.unparsed_count += 1
         if c.stage == "today":
             a.current.append(c)
         elif c.stage == "future":

@@ -27,8 +27,12 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .models import CartItem, MenuItem, OrderQuote
+
+if TYPE_CHECKING:                      # 仅类型检查用：避免与 ordering 形成运行时循环导入
+    from .ordering import Menu
 
 # 样例数据目录（离线可复现：菜单 / 券面文案，供 McSolve 演示与测试）
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"

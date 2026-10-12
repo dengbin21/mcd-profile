@@ -12,19 +12,28 @@ license: MIT
 不做只会点餐的助手，而做**一条从「吃之前」到「吃之后」的闭环**：
 
 - **吃之前 · McSolve（招牌）**：说一句你想吃什么，它穷举上千种组合、逐一让官方 `calculate-price`
-  **验真实价**，给出带 S/A/B/C 评级的**最优解 + 战报长图**——**全程只读，不产生任何订单**；
+  **验真实价**，给出带 S/A/B/C 评级的**最优解 + 方案卡**（文本 / HTML）——**全程只读，不产生任何订单**；
 - **吃之前 · McPreheat**：距下一场活动还有几天，**你的券等得到那天吗**；
-- **吃之后 · archive**：把每一单翻译成看得懂、晒得出的**六维复盘 + 麦门人格卡**；
+- **吃之后 · archive**：把每一单翻译成看得懂、晒得出的**六大画像复盘 + 麦门人格卡**；
 - **（可选）点餐闭环**：默认 dry-run，须显式确认才会真正下单。
 
 所有数据均通过 **`mcd-mcp` MCP 服务** 获取；**确定性算法随包提供**（`src/`，见下）。
 除数值外的**全部展示文字**可由 **WorkBuddy（宿主 agent）** 生成，无需任何外部模型 Key。
 
+> **术语：两种「卡」不要混叫**（此前因同名导致规则互相打架）
+>
+> - **方案卡** = McSolve 的最优解产物（`solve_report.render_solve_markdown` /
+>   `render_solve_html`）：只读阶段就能给，**不是长图**，也不需要下单；
+> - **战绩长图** = 竖版 PNG（`report.render_card_png`）：只用于两处——
+>   「吃之后」的**麦门人格卡**，以及**真实下单成功后**的**本次点餐战报**。
+>
+> 说「长图」时指的是后者；说「方案卡」时指的是前者。
+
 ⭐ **仓库**：https://github.com/dengbin21/mcd-profile
 
 ## 算法代码承载：复用 `src/`，不要每次重写
 
-券解析、组合枚举、评级、日期解析、冲突评分、六维画像、人格判定这类**确定性逻辑**，
+券解析、组合枚举、评级、日期解析、冲突评分、**六大画像**、人格判定这类**确定性逻辑**，
 如果宿主 agent 每次按文本规则**现场重新实现**，同一套逻辑每个会话写一遍、结果不可复现、
 还容易踩正则 / 单位 / 日期解析的坑。本 Skill 已用 `src/` 把这些逻辑**实现并测试**，
 宿主 agent **直接复用对应函数**（读取文件理解实现、在环境中执行），**不要重新发明**：
@@ -33,36 +42,85 @@ license: MIT
 |---|---|
 | **McSolve** | `solver.parse_coupons()` 券规则解析 / `solver.enumerate_candidates()` 枚举剪枝 / `solver.is_better()` 选优 / `solver.grade_of()` 评级 |
 | **McPreheat** | `preheat.parse_when()` 活动日期 / `preheat.parse_until()` 券到期（区间取结束日） / `preheat.score_of()` 备战度评分 |
-| **archive** | `analysis.analyze_*()` 六维画像 / `persona.build_persona()` 人格判定 / `nutrition.NutritionIndex()` 营养匹配 |
+| **archive** | `analysis.analyze_*()` 六大画像 / `persona.build_persona()` 人格判定 / `nutrition.NutritionIndex()` 营养匹配 |
 | **通用** | `models.parse_*()` 响应字段解析；`calculate-price` 金额单位是**分**、`order-list` 的 `realTotalAmount` 是**元字符串**——方向相反，代码统一处理 |
 
-> 各玩法步骤里的「用 `xxx`」即指读取 `src/xxx.py` 复用其函数；算法自带 103 项离线自测，
+> 各玩法步骤里的「用 `xxx`」即指读取 `src/xxx.py` 复用其函数；算法自带 100+ 项离线自测
+> （跑 `python -m pytest tests/ -q` 复核，**以实际输出为准，不要引用文档里的旧数字**），
 > 可作为可靠性依据。若运行环境没有 Python，至少**照着 `src/` 的实现口径执行**，
 > 不要凭印象改规则。
+
+### 执行 `src/` 的三条路径（client 从哪来、依赖要不要装）
+
+复用 `src/` **不等于要再建一条带 Token 的通道**——按你要做的事选：
+
+| 你要做的事 | 怎么跑 | 需要什么 |
+|---|---|---|
+| **A. 只跑确定性算法**（券解析 / 枚举 / 评级 / 日期 / 画像 / 人格 / 营养匹配） | 拿你**已经通过 MCP 拿到的数据**直接调纯函数：`solver.parse_coupons(券标题列表)`、`preheat.build_preheat(campaigns, coupons, ...)`、`analysis.analyze_*()`、`persona.build_persona()`、`NutritionIndex(foods).match(商品名)` | **纯标准库**：无 client、无 Token、无第三方依赖 |
+| **B. 真实采集 + 一次成档** | `archive.build_archive(client)`，`client` 用 `McdMcpClient()` 构造（见下） | `requests` + Token（见下） |
+| **C. 离线演示 / 自测** | 不传 client：`build_archive()`、`solver.load_sample_menu()` 会自动读 `data/` 脱敏样例 | **纯标准库** |
+
+**client 怎么来（只有 B 需要）**：
+
+```python
+from src.mcp_client import McdMcpClient
+client = McdMcpClient()                      # 自动找 Token（顺序见下）
+client = McdMcpClient(token="<真实 Token>")   # 或显式传入
+```
+
+**Token 查找顺序**——与「只配 MCP」一致，**不需要你额外导出环境变量**：
+
+1. 显式传入的 `token=`；
+2. 环境变量 `MCD_MCP_TOKEN`；
+3. **客户端的 MCP 配置文件**：`McdMcpClient()` 自动扫描 `~/.workbuddy/mcp.json`、
+   `~/.codebuddy/.mcp.json`、`~/.cursor/mcp.json`、`.mcp.json` 等常见位置，取其中
+   `mcd-mcp`（或 url 含 `mcd.cn`）那条配置的 `headers.Authorization`；
+   配置里写 `${ENV_VAR}` 会展开环境变量，**展开为空则跳过**（不把字面量当 Token 去 401）。
+
+三个都拿不到时 client 照样能构造，但**第一次 `call_tool` 会抛 `McpAuthError`**，
+提示去 https://open.mcd.cn/mcp 申请——不会静默返回一个看不懂的 403。
+
+**依赖与降级（如实说明，不要对用户说「零依赖」）**：
+
+| 能力 | 依赖 | 缺失时的真实行为 |
+|---|---|---|
+| A / C：算法、离线样例、Markdown / HTML 产物 | **仅标准库** | 不受影响，照常产出 |
+| B：联网采集 | `requests`（`pip install -r requirements.txt`） | 抛错提示安装；`build_archive(use_remote=False)` 仍可离线跑 |
+| 竖版**战绩长图 PNG** | `matplotlib` + 中文字体 | `render_card_png()` **返回 `None`**——此时改交付 HTML 卡，并**明确告诉用户长图未生成**，不要当成「已有图」糊过去 |
 
 **执行方式（少即是快）——每个玩法只有一个入口，不要散装调工具**：
 
 | 玩法 | 唯一入口 | 说明 |
 |---|---|---|
-| archive（麦门人格 / 复盘） | `archive.build_archive(client)` | 采集 + 六维画像 + 人格**一次完成**；禁止逐个手动调 20 个工具、禁止手工算画像 |
+| archive（麦门人格 / 复盘） | `archive.build_archive(client)` | 采集 + 六大画像 + 人格**一次完成**；禁止逐个手动调 20 个工具、禁止手工算画像 |
 | McSolve（怎么点最划算） | `solver.solve(must, menu, rules, pricer)` | 内部已并发验价（Top N）；不要自己循环调 `calculate-price` |
-| McPreheat（券赶得上吗） | `preheat.build_preheat(campaigns, coupons, ...)` | 日期解析/冲突/评分一次完成 |
+| McPreheat（券赶得上吗） | `preheat.build_preheat(campaigns, coupons, ...)` | 日期解析 / 冲突 / 评分一次完成 |
+| 点餐闭环（下单） | `ordering.load_menu / quote / place(confirm=True)` | 「话术 → 购物车」用 `order_text.parse_items()` + `order_text.resolve_cart()` |
+
+**产物渲染（每个玩法一个渲染入口，不要自己拼字符串）**：
+
+| 玩法 | 渲染函数 |
+|---|---|
+| archive | `report.render_markdown(a, copy=…)` / `report.render_card_html(a, copy=…)` / `report.render_card_png(a, 路径, copy=…)`（**战绩长图**） |
+| McSolve | `solve_report.render_solve_markdown(sol, copy=…)` / `render_solve_html(sol, copy=…)`（**方案卡**，非长图） |
+| McPreheat | `preheat_report.render_preheat_markdown(pre, copy=…)` / `render_preheat_html(pre, copy=…)` |
 
 > 同一账号短时间内重复复盘：结果可复用，无需每次重新全量采集；
-> `order-list` 仅返回最近约 10 单，不要幻想拿更多。
+> `order-list` **无分页、只返回最近十几单**（实测约 10~20，随账号而异），
+> 不要幻想拿更多，文案一律写「最近 N 单」。
 >
-> **人格卡渲染**：`report.png.render_card_png(archive, 输出路径, copy=你的 copy_pack)`
+> **人格卡渲染**：`report.render_card_png(archive, 输出路径, copy=你的 copy_pack)`
 > —— `copy` 必须带（否则卡片标「草稿」）；logo 自动探测 Skill 包内
-> `assets/logo.png`，无需传参。
+> `assets/logo.png`，无需传参；**返回 `None` 表示没装 matplotlib，此时改交付 HTML 卡并如实说明**。
 
 ## 何时触发
 
 | 用户说 | 走哪条 |
 |---|---|
-| 「我要吃麦当劳」「帮我点个麦当劳」 | **点餐闭环**：问需求→选店→选餐→算价→**请用户确认→真实下单并支付后才生成「本次点餐战报」长图**；dry-run 只给文字预览，**不出战报长图**。本会话已连过 mcd-mcp 就跳过自检 |
+| 「我要吃麦当劳」「帮我点个麦当劳」 | **点餐闭环**：问需求→选店→选餐→算价→**请用户确认→真实下单成功后才生成「本次点餐战报」长图**；dry-run 只给文字/HTML 预览，**不出长图**。本会话已连过 mcd-mcp 就跳过自检 |
 | 「这单怎么点最划算」「帮我算算买什么最省」「我想吃 X，怎么点」 | **McSolve**（`query-meals` + `calculate-price` ×N） |
 | 「我的券什么时候到期」「下周活动我的券还能用吗」「帮我备战」 | **McPreheat**（`campaign-calendar` × `query-my-coupons`） |
-| 「我在麦当劳花了/省了多少钱」「吃了多少热量」「我的麦门人格」 | 档案复盘（`order-list` → 六维画像） |
+| 「我在麦当劳花了/省了多少钱」「吃了多少热量」「我的麦门人格」 | 档案复盘（`order-list` → 六大画像） |
 | 「我常去哪家店、常点什么」「最近有什么活动」 | 档案 · 省钱 / 活动 |
 | 「帮我点一份…」 | 点餐闭环（默认 dry-run，须显式确认） |
 
@@ -72,7 +130,11 @@ license: MIT
 ## 环境准备：只做一件事，配 `mcd-mcp`
 
 用这个 Skill 的**唯一前置条件**就是让宿主能连上麦当劳官方 MCP——不需要 clone 仓库、
-不需要装依赖、不需要配任何模型 Key。
+不需要配任何模型 Key。**离线算法与 Markdown / HTML 产物只用 Python 标准库**。
+
+需要装依赖的只有两件事（缺了会降级，不会静默出错）：
+**联网采集**要 `requests`；**竖版战绩长图 PNG** 要 `matplotlib`（缺它时卡片降级为 HTML，
+必须如实告知用户）。
 
 1. 到 **https://open.mcd.cn/mcp** 申请 Token；
 2. 在 MCP 客户端的配置里加一条（以 WorkBuddy 的 `~/.workbuddy/mcp.json` 为例）：
@@ -167,7 +229,8 @@ list-nutrition-foods  最优解的营养
 5. 选优：**用 `solver.is_better()`**（省钱率优先、同率取实付更低）；首个候选恒为
    「只点必选」= 直觉点法对照；
 6. 评级：**用 `solver.grade_of()`**（S≥45% / A≥30% / B≥15% / C），再补营养
-   （`list-nutrition-foods`）、战报长图。
+   （`list-nutrition-foods`），最后用 `render_solve_markdown` / `render_solve_html`
+   出**方案卡**（不是长图，也不需要下单）。
 
 ## 二、McPreheat：活动日历 × 券到期日的交叉冲突
 
@@ -183,6 +246,18 @@ now-time-info       服务器时间（倒计时与「今天」的锚点）
 
 **实现复用 `src/preheat.py`**：活动日期解析用 `parse_when()`，券到期解析用 `parse_until()`
 （区间取结束日），冲突判定与备战度用 `build_preheat()` / `score_of()`——**不要手写日期解析**。
+
+**备战度（`score_of()`，纯规则可解释，产物里逐条披露加减项）**：
+
+- 有预热对象时**基准 100**：miss 每张 **−25** / 7 天内到期每张 **−10**（**最多算 3 张**，
+  `URGENT_CAP=3`——手里一堆临期券是弹药足，不是裸奔）/ 活动当天一张券不剩 **−20** /
+  今日本来就有活动 **+5** / 积分够兑换门槛 **+5**；
+- **没有预热对象**（取不到未来活动）时**基准 80**，只按临期券扣分（同样封顶 3 张）；
+- 分级线：**S ≥85 / A ≥70 / B ≥50 / C**（低于 50）。
+- 扣分必须压得住加分：有冲突必定掉到 A 以下，不会出现「有 miss 还评 S」。
+- **口径统一**：`analysis.analyze_activity()` 与 `preheat.build_preheat()` **都以日期判断为准**，
+  `stage` 只在日期解析不出时兜底并计数披露（`Activity.unparsed_count`）——
+  否则会出现「档案说今天有活动、预热台说没有下一场」。
 
 **沉默成本（另一个钩子）**：快过期的券不只是「赶不上活动」，它们**等于正在流失的钱**——
 人对损失的敏感度是对收益的两倍，这个数字最有行动力。做法：
@@ -241,15 +316,26 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
         → create-order（takeWayCode 取自上一跳）→ query-order（复核）
 ```
 
+> **「话术 → 购物车」**：用户说「一份板烧鸡腿堡加一杯可乐」时，
+> 用 `order_text.parse_items()` 拆成 `[(名称, 份数)]`，再用
+> `order_text.resolve_cart(pairs, menu)` 解析成 `CartItem`（**同名的会抛 `AmbiguousItem`，
+> 交给用户选，不要瞎猜**）。
+>
+> **按需补信息**：`ordering.describe()` 补单个商品的组成 / 图；
+> `ordering.menu_probe_fields()` 用于联调自检（有图率 / 有价率 / 类目数）。
+>
 > **硬依赖**：到店场景 `create-order` 的 `takeWayCode` **必传**，且只能来自
 > `calculate-price` 的 `takeWayList[].code` —— **下单前必须先算价**。
 >
 > **有图有价**：`query-meals` 顶层 `meals` 字典一次拿全 100+ 款商品的「图+价+名」。
 >
-> **🚫 战报长图只在真实下单并支付后生成**：
-> - 算价预览（dry-run）阶段**一律不生成**任何「战报长图」/分享卡——只给文字算价预览；
-> - 只有用户**显式确认**、`create-order` 真实下单成功、完成支付后，才生成「本次点餐战报」长图；
-> - 用户没下单、没支付，就不要生成战报长图。这条是硬规则，不是可选项。
+> **🚫 战绩长图只在「真实下单成功」后生成**（本 Skill 覆盖的 21 个工具里**没有任何支付能力**，
+> 所以前置条件只能落在「下单成功、拿到 `orderId`」这一步——不要写「支付后」，那是判定不了的）：
+> - 算价预览（dry-run）阶段**一律不生成**任何「战报长图」/ 分享卡——只给文字或 HTML 预览；
+> - 只有用户**显式确认**、`create-order` 真实下单成功（`PlacedOrder.ok=True` 且拿到 `orderId`）后，
+>   才生成「本次点餐战报」长图；
+> - 用户没下单，就不要生成战绩长图。这条是硬规则，不是可选项。
+> - McSolve 的**方案卡**不受此限制——它是只读验价的产物，不是战报。
 
 **点餐闭环为什么慢 + 怎么更快（性能指引）**：
 
@@ -268,7 +354,7 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 
 | 画像 | 内容 |
 |---|---|
-| 🎬 **本次点餐战报** | **仅真实下单并支付后**才生成的分享长图（门店/时间/餐品/实付/省下/本单热量）；**dry-run / 算价预览阶段不生成**——没下单没支付就没有战报 |
+| 🎬 **本次点餐战报** | **仅真实下单成功后**才生成的分享长图（门店/时间/餐品/实付/省下/本单热量）；**dry-run / 算价预览阶段不生成**——没下单就没有战报（本 Skill 无支付能力，不要以「支付完成」为条件） |
 | 🏅 **成就徽章墙** | 从数据里挑出的「可炫耀」成就，最多 9 枚（3×3） |
 | 💬 **麦门金句** | 千人千面、可截图的传播文案 |
 | 💰 **消费** | 累计消费、平均客单、最贵/最省一单、最爱门店、复购最多单品、时段分布 |
@@ -281,9 +367,11 @@ query-nearby-stores / delivery-query-stores → query-meals（富菜单：图+�
 
 外加一份**MCP 工具覆盖清单**，让「用了多少 MCP 能力」看得见。
 
-**实现复用 `src/analysis.py` + `src/persona.py` + `src/nutrition.py`**：六维画像用
+**实现复用 `src/analysis.py` + `src/persona.py` + `src/nutrition.py`**：六大画像用
 `analysis.analyze_consumption / analyze_health / analyze_benefit / analyze_savings /
-analyze_habit / analyze_activity`，营养匹配用 `nutrition.NutritionIndex()`，人格判定用
+analyze_habit / analyze_activity`，营养匹配用 `nutrition.NutritionIndex()`（`match()` 是
+**四级**：归一化精确 → 去规格前缀的核心名精确 → **包含关系**（取长度最接近） →
+相似度 ≥0.82），人格判定用
 `persona.build_persona()`（含无订单兜底）——下面两张表是这些函数的规则 ground truth。
 
 **千人千面**：人格 → 一整套深色潮酷配色 + Slogan，
@@ -309,7 +397,13 @@ analyze_habit / analyze_activity`，营养匹配用 `nutrition.NutritionIndex()`
 **无消费记录兜底（诚实，不硬编）**：有官方「我的常点」→ 常点守门人；有券/积分 →
 券包收藏家；都没有 → 麦门新兵（新手期）。雷达按六维全 0 输出。
 
-六维雷达（0~100）：早餐魂 / 夜宵力 / 肉食力 / 甜品力 / 咖啡力 / 省钱力。
+六维雷达（**早餐魂 / 夜宵力 / 肉食力 / 甜品力 / 咖啡力 / 省钱力**）：
+
+- 取值 0~100，但**不是线性占比**：`persona._pct()` 做了 **×130 后截断**的放大
+  （`RADAR_GAIN = 130`），即**行为占比 ≈77% 就打满 100 分**——这是为了让中小占比
+  在图上不至于全贴底，图形可读性优先；
+- 反过来，**雷达分 ÷ 130 ≈ 真实行为占比**。要向用户解释「省钱力 94」时，
+  按真实占比说（如省钱率 17%），不要把雷达分当百分比念。
 
 ### 成就徽章触发（可复现，最多 9 枚）
 
@@ -332,6 +426,15 @@ analyze_habit / analyze_activity`，营养匹配用 `nutrition.NutritionIndex()`
 
 **工作流**：读取档案数值（facts）→ 原创写全部文字 → 输出下方结构的 `copy_pack.json` →
 渲染时携带它。**没有 `copy_pack` 的渲染是草稿，不得作为最终交付给用户。**
+
+**这条链路的四个入口（别自己拼 facts、别自己手写校验）**：
+
+| 步骤 | 函数 |
+|---|---|
+| 取档案素材 + schema | `textpack.build_copy_brief(archive)` → `{facts, dynamic_text, schema}` |
+| 取预热台素材 | `textpack.build_preheat_brief(pre)` |
+| 校验（三道护栏） | `textpack.validate_copy_pack(pack, allowed_numbers)` → 返回**告警列表**，**必须显式打印给用户**（不然你以为改写了、其实静默回退了） |
+| 渲染 | `report.render_markdown / render_card_html / render_card_png`、`solve_report.render_solve_markdown / render_solve_html`、`preheat_report.render_preheat_markdown / render_preheat_html`——**都收 `copy=` 参数** |
 
 **视觉结构**是规则驱动的（配色 / 徽章触发 / 雷达打分），**文字**按上面边界由 WorkBuddy 生成。
 `copy_pack.json` 结构：
@@ -362,5 +465,7 @@ analyze_habit / analyze_activity`，营养匹配用 `nutrition.NutritionIndex()`
   **绝不调用 `create-order`**；下单前先列出门店/餐品/实付明细，让用户自己拍板。
 - **真实下单会产生真实订单与费用**，请用户自行确认门店与餐品后再执行；下单成功保留 `orderId` 以便撤销。
 - **隐私**：Token 只存在于客户端的 MCP 配置里，不写入日志、不进产物、不提交仓库。
-- **诚实口径**：`order-list` 仅返回最近约 10 单，文案以「最近 N 单」为准，不夸大。
+  `McdMcpClient()` 只在**本进程内**读一次配置取 Token（不复制、不落盘、不回显）；
+- **诚实口径**：`order-list` 无分页、只返回最近十几单，文案以「最近 N 单」为准，不夸大；
+  雷达分做了 ×130 放大（见「六维雷达」），解释时按真实占比说。
 - **免责声明**：结论仅供个人复盘，不构成医疗或营养建议。
