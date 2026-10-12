@@ -96,7 +96,7 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
     # ---- 预排：先算内容总高（"设计单位"，1.0 ≈ 19.2in），再动态定画布高度 ----
     GAP = 0.014
     blocks: list[tuple[float, str]] = []
-    if r is not None:
+    if r is not None and r.placed:   # 战报长图只在真实下单并支付后生成
         blocks.append((0.055 + 0.03 * max(1, min(6, len(r.items))), "report"))
     blocks.append((0.125, "kpi"))
     blocks.append((0.155, "radar"))

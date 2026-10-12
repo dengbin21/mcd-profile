@@ -14,9 +14,9 @@ from .base import (
 
 
 def _report_html_block(a: Archive, th: Theme, R: TextResolver) -> str:
-    """本次点餐战报区块（含商品缩略图 / 实付 / 省 / 热量 / 订单号）。"""
+    """本次点餐战报区块（**仅真实下单并支付后**；dry-run 不渲染战报）。"""
     r = a.order_report
-    if r is None:
+    if r is None or not r.placed:
         return ""
 
     def _oi(it) -> str:

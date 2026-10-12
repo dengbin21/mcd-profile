@@ -433,3 +433,25 @@ if __name__ == "__main__":
         fn()
         print(f"PASS  {fn.__name__}")
     print(f"\n全部 {len(fns)} 项自检通过 ✅")
+
+
+def test_unplaced_report_is_not_rendered():
+    """铁律：没下单、没支付，就不生成战报长图——placed=False 的战报不渲染。"""
+    from src.report.html import render_card_html
+    from src.report.markdown import render_markdown
+    from src.report.png import render_card_png
+    from tempfile import mkstemp
+
+    rep = load_meal_report_sample()
+    assert rep is not None
+    rep.placed = False                     # 模拟「只算价、未下单」
+    a = build_archive(None, use_remote=False, order_report=rep)
+
+    md = render_markdown(a)
+    html = render_card_html(a)
+    assert "本次点餐战报" not in md, "未下单不应出现战报（MD）"
+    assert "本次点餐战报" not in html, "未下单不应出现战报（HTML）"
+
+    _, path = mkstemp(suffix=".png")
+    ok = render_card_png(a, path)
+    assert ok is not None, "渲染不应失败"

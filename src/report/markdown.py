@@ -12,9 +12,9 @@ from .base import (
 
 
 def _report_markdown(a: Archive, R: TextResolver) -> list[str]:
-    """本次点餐战报（点餐闭环产物）。"""
+    """本次点餐战报（**仅真实下单并支付后**；dry-run 不生成战报）。"""
     r = a.order_report
-    if r is None:
+    if r is None or not r.placed:
         return []
     L: list[str] = []
     L.append(f"## 🎬 {R('sec.report')}")
