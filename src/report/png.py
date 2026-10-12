@@ -64,7 +64,8 @@ def _vert_gradient(ax, top: str, bottom: str) -> None:
     ax.imshow(img, aspect="auto", extent=[0, 1, 0, 1], zorder=0)
 
 
-def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = None) -> str | None:
+def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = None,
+                    logo_path: str = "") -> str | None:
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -140,6 +141,10 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
     glow(0.10, 1.02, 0.55, _hex(th.primary), 0.30)
     glow(0.94, -0.02, 0.70, _hex(th.accent), 0.20)
 
+    # 品牌超大 M 水印（右下，极淡，动感倾斜）
+    fig.text(0.90, 0.02, "M", fontsize=300, color=(*_hex(th.primary), 0.07),
+             ha="center", va="center", fontweight="black", rotation=-12, zorder=0)
+
     def panel(y0, y1, x0=0.06, x1=0.94, alpha=0.05):
         a0, a1 = M(y0), M(y1)
         bgax.add_patch(FancyBboxPatch((x0, a0), x1 - x0, a1 - a0,
@@ -166,17 +171,37 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
 
     # —— 头部 ——
     from matplotlib import patheffects as _pe
+    import numpy as _np
     is_draft = copy is None or not copy.active
     _stroke = lambda w, fg: _pe.withStroke(linewidth=w, foreground=fg)   # noqa: E731
-    text(0.06, 0.968, _png_plain(R("brand")), color=primary, fontsize=17, fontweight="bold")
-    text(0.06, 0.936, _png_plain(eff_label(a, copy)), color="#FFFFFF", fontsize=44, fontweight="black",
+
+    brand_x = 0.06
+    logo_arr = images.load_array(str(logo_path)) if logo_path else None
+    if logo_arr is not None:
+        lax = fig.add_axes([0.06, M(0.954), 0.045, 0.045 / D])
+        lax.imshow(logo_arr)
+        lax.axis("off")
+        brand_x = 0.115
+
+    text(brand_x, 0.968, _png_plain(R("brand")), color=primary, fontsize=17, fontweight="bold")
+    text(brand_x, 0.936, _png_plain(eff_label(a, copy)), color="#FFFFFF", fontsize=44, fontweight="black",
          path_effects=[_stroke(7, th.bg), _stroke(3, (*_hex(primary), 0.75))])
-    text(0.06, 0.912, _png_plain(slogan), color=th.muted, fontsize=15)
-    text(0.06, 0.893, " ".join(f"#{t}" for t in tags), color=accent, fontsize=13)
+    text(brand_x, 0.912, _png_plain(slogan), color=th.muted, fontsize=15)
+    text(brand_x, 0.893, " ".join(f"#{t}" for t in tags), color=accent, fontsize=13)
     text(0.94, 0.968, R("lbl.date_range", start=c.date_start, end=c.date_end),
          color=th.muted, fontsize=12, ha="right")
     if is_draft:
         text(0.94, 0.936, "草稿 · 模板文案", color="#FF6B5E", fontsize=13, ha="right", fontweight="bold")
+
+    # 动感分隔线：主色横带（两端渐隐），切开标题区与内容区
+    band = _np.zeros((1, 256, 4))
+    g = _np.linspace(0, 1, 256)
+    for i in range(3):
+        band[0, :, i] = _hex(primary)[i]
+    band[0, :, 3] = _np.sin(g * _np.pi) * 0.9
+    band_ax = fig.add_axes([0.06, M(0.884) - 0.004, 0.88, 0.012])
+    band_ax.imshow(band, extent=[0, 1, 0, 1], aspect="auto", zorder=1)
+    band_ax.axis("off")
 
     y = TOP
     for hh, kind in blocks:

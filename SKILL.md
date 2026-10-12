@@ -50,6 +50,10 @@ license: MIT
 
 > 同一账号短时间内重复复盘：结果可复用，无需每次重新全量采集；
 > `order-list` 仅返回最近约 10 单，不要幻想拿更多。
+>
+> **人格卡渲染**：`report.png.render_card_png(archive, 输出路径, copy=你的 copy_pack,
+> logo_path="assets/logo.png")` —— `copy` 必须带（否则卡片标「草稿」）；
+> 有 `assets/logo.png` 就传 logo，没有就省略。
 
 ## 何时触发
 
