@@ -452,3 +452,83 @@ def remaining_parts(pre: Preheat) -> tuple[int, int, int, int]:
     if secs <= 0:
         return (0, 0, 0, 0)
     return (secs // 86400, secs % 86400 // 3600, secs % 3600 // 60, secs % 60)
+
+
+# ---------------------------------------------------------------------- #
+# 券面价值反查 + 沉默成本
+# （快过期的券 = 正在流失的钱；价值宁缺毋滥，解析不出取 0 并披露）
+# ---------------------------------------------------------------------- #
+_RE_FIXED_PRICE = re.compile(r"^(\d+(?:\.\d+)?)\s*元")
+_RE_THRESHOLD_VALUE = re.compile(r"满\s*(\d+(?:\.\d+)?)\s*元?\s*(?:减|省|立减)\s*(\d+(?:\.\d+)?)")
+_RE_FREE_VALUE = re.compile(r"免费\s*(.{1,12}?)(?:券|$)")
+_RE_BOGO_VALUE = re.compile(r"(.{1,10}?)\s*买一?送一")
+
+
+def _menu_price_of(name: str, menu_prices: dict[str, float]) -> float | None:
+    """在「商品名 → 单价」表里反查价格：先精确、再包含、后模糊；查不到返回 None（不猜）。"""
+    if not name:
+        return None
+    if name in menu_prices:
+        return menu_prices[name]
+    for key, price in menu_prices.items():
+        if key and (name in key or key in name):
+            return price
+    from difflib import SequenceMatcher
+    best, best_score = None, 0.0
+    for key, price in menu_prices.items():
+        if not key:
+            continue
+        score = SequenceMatcher(None, name, key).ratio()
+        if score > best_score:
+            best, best_score = price, score
+    return best if best_score >= 0.5 else None
+
+
+def coupon_value(title: str, menu_prices: dict[str, float]) -> tuple[float, str]:
+    """券面价值反查：从菜单反查原价，算出这张券真实值多少钱。
+
+    满减「满50减12」→ 减免额；固定价「9.9元中杯冰美式」→ 菜单原价 − 9.9；
+    买一送一「中薯条买一送一」/ 免费「免费香芋派」→ 商品菜单单价。
+    解析不出返回 ``(0, 口径)``——**宁可少报，不可编造**。
+    """
+    t = (title or "").strip()
+    m = _RE_THRESHOLD_VALUE.search(t)
+    if m:
+        return float(m.group(2)), f"满减减免 ¥{float(m.group(2)):g}"
+    m = _RE_FIXED_PRICE.match(t)
+    if m:
+        fixed = float(m.group(1))
+        price = _menu_price_of(t[m.end():].strip(), menu_prices)
+        if price is not None:
+            return round(price - fixed, 2), f"原价 ¥{price:g} − ¥{fixed:g}"
+        return 0.0, "价值未知（菜单查不到原价）"
+    for pat in (_RE_FREE_VALUE, _RE_BOGO_VALUE):
+        m = pat.search(t)
+        if m:
+            price = _menu_price_of(m.group(1).strip(), menu_prices)
+            if price is not None:
+                return round(price, 2), f"商品单价 ¥{price:g}"
+            return 0.0, "价值未知（菜单查不到商品）"
+    return 0.0, "价值未知（无法解析券面）"
+
+
+def silent_cost(coupons: list[CouponWatch], menu_prices: dict[str, float],
+                within_days: int = 30) -> dict:
+    """沉默成本：``within_days`` 内到期的券，面值合计——这是正在流失的钱。
+
+    返回 ``{"total", "count", "items": [{title, value, days, note}], "unknown"}``；
+    ``unknown`` 为价值未能估出的券数（诚实披露，不计入 total）。
+    """
+    items, unknown = [], 0
+    for c in coupons:
+        if c.days_to_expire is None or c.days_to_expire > within_days:
+            continue
+        value, note = coupon_value(c.title, menu_prices)
+        if value <= 0:
+            unknown += 1
+            continue
+        items.append({"title": c.title, "value": round(value, 2),
+                      "days": c.days_to_expire, "note": note})
+    items.sort(key=lambda it: it["days"])
+    return {"total": round(sum(it["value"] for it in items), 2),
+            "count": len(items), "items": items, "unknown": unknown}

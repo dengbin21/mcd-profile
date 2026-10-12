@@ -374,6 +374,53 @@ def test_urgent_section_labels_its_window():
 
 
 # ---------------------------------------------------------------------- #
+_MENU: dict[str, float] = {"中薯条": 12.0, "香芋派": 8.0, "中杯冰美式": 23.0, "板烧鸡腿堡": 21.5}
+
+
+def test_coupon_value_kinds():
+    """券面价值反查：满减=减免额、固定价=原价−固定价、买一送一/免费=菜单单价。"""
+    from src.preheat import coupon_value
+
+    v, note = coupon_value("满50减12", _MENU)
+    assert v == 12.0 and "减" in note
+    v, note = coupon_value("9.9元中杯冰美式", _MENU)
+    assert v == 13.1, f"原价23−9.9=13.1，实际 {v}"   # 23.0 − 9.9
+    assert "原价" in note
+    v, note = coupon_value("中薯条买一送一", _MENU)
+    assert v == 12.0 and "单价" in note
+    v, note = coupon_value("免费香芋派", _MENU)
+    assert v == 8.0 and "单价" in note
+    v, note = coupon_value("神秘看不懂的券", _MENU)
+    assert v == 0 and "未知" in note, "解析不出必须取 0 并披露，不编造"
+
+
+def test_coupon_value_refuses_to_guess_when_menu_missing():
+    """固定价券/免费券若菜单查不到原价，取 0 并标注价值未知——宁可少报。"""
+    from src.preheat import coupon_value
+
+    v, note = coupon_value("9.9元神秘新品", _MENU)
+    assert v == 0 and "未知" in note
+    v, note = coupon_value("免费神秘小食", _MENU)
+    assert v == 0 and "未知" in note
+
+
+def test_silent_cost_sums_expiring_value():
+    """沉默成本：30 天内到期的券按面值汇总；超窗/无到期/价值未知的不虚报。"""
+    from src.preheat import CouponWatch, silent_cost
+
+    coupons = [
+        CouponWatch("满50减12", days_to_expire=2),
+        CouponWatch("中薯条买一送一", days_to_expire=10),
+        CouponWatch("9.9元中杯冰美式", days_to_expire=40),     # 超 30 天窗，不计
+        CouponWatch("神秘看不懂的券", days_to_expire=3),        # 价值未知 → unknown
+        CouponWatch("免费香芋派", days_to_expire=None),         # 无到期日，不计
+    ]
+    sc = silent_cost(coupons, _MENU)
+    assert sc["total"] == 24.0, f"12 + 12 = 24，实际 {sc['total']}"
+    assert sc["count"] == 2
+    assert sc["unknown"] == 1, "价值估不出的必须披露数量"
+
+
 if __name__ == "__main__":
     fails = 0
     for name, fn in sorted(globals().items()):

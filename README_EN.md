@@ -6,28 +6,29 @@
 ![license](https://img.shields.io/github/license/dengbin21/mcd-profile)
 ![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 
-> **Find the most cost-effective order before you eat — then review every order you've ever eaten.**
+> **Before you eat, order every meal for the least money; after you eat, get a McPersona card you can show off.**
 >
 > Tell your AI agent "I want a McChicken, how do I order it to save the most?" and it enumerates
 > thousands of combinations, has each one **verified against the official McDonald's `calculate-price`
 > API**, and returns an **S/A/B/C-rated optimal solution + a shareable report card** — all read-only,
 > **no order is placed, not a single cent is spent**.
 >
-> After you eat, ask "how much did I spend and save at McDonald's, what's my McPersona" and every
-> order becomes a **spend × savings × health × benefits** review + a McPersona card.
+> After you eat, ask "what's my McPersona" — every order becomes a **one-of-a-kind McPersona card**:
+> the same profile renders a different poster for different people.
 >
-> And try "when do my coupons expire, will they make it to the next campaign?" — it tells you exactly
-> which coupons won't survive until that day.
+> And ask "when do my coupons expire" — it doesn't just tell you whether they'll survive the next
+> campaign; it tells you **what the expiring ones are worth: money you're silently throwing away**.
 
 This is an **Agent Skill**: `SKILL.md` defines the workflow and triggers, while the **deterministic
 algorithms live in the bundled `src/` code** (coupon parsing / combo enumeration / rating / date
-parsing / 6-dimension portrait / persona detection), which your **host AI agent** (WorkBuddy / Codex /
-any client that supports Skills + MCP) **reuses instead of re-implementing on every session**. All data
-comes from the official McDonald's MCP (`mcd-mcp`, 20 read-only tools). Which means:
+parsing / 6-dimension portrait / persona detection / coupon value lookup), which your **host AI agent**
+(WorkBuddy / Codex / any client that supports Skills + MCP) **reuses instead of re-implementing on
+every session**. All data comes from the official McDonald's MCP (`mcd-mcp`, 20 read-only tools).
+Which means:
 
 - **One directory to install**: drop this package (`SKILL.md` + `src/`) into your client's skills
   directory and it works — no extra Python setup needed;
-- The algorithms are implemented and covered by **103 offline self-tests** — reproducible and reliable;
+- The algorithms are implemented and covered by **106 offline self-tests** — reproducible and reliable;
 - Read-only first: solving / preheating / archiving only call query tools — no coupon claiming, no
   lottery, no ordering;
 - The only write operation, `create-order`, is an **optional ordering loop, off by default**, and
@@ -43,12 +44,12 @@ comes from the official McDonald's MCP (`mcd-mcp`, 20 read-only tools). Which me
 
 | # | Selling point | Why it's different |
 |---|---|---|
-| 1 | **Prices verified by the official API, never guessed** | Enumeration and pricing are strictly separated: every candidate combo is sent to the official `calculate-price` to get the **real amount payable**; local estimation is used only for ranking — the architecture makes it impossible for the model to invent prices |
-| 2 | **Optimal answer with a rating + an intuition comparison** | S/A/B/C ratings + a "your gut order vs. the algorithm's optimum" comparison of amount payable / average price: not just the answer, but "where your instinct lost, and what ¥0.4 extra buys you" |
-| 3 | **Budget × calorie dual constraints** | One sentence satisfies both "stay under budget" and "stay under calorie limit"; calories are matched against the official nutrition database with honest coverage reporting — unmatchable items are treated as a lower bound, never wrongly killed |
-| 4 | **Preheat desk: which coupons won't survive until the next campaign** | Coupon expiry × campaign calendar are **crossed**, and conflicts are *computed*, not copywritten — most savings Skills never cross these two datasets |
-| 5 | **One closed loop: before eating → after eating** | A single `preheat → solve → eat → archive` timeline; every entry point hands you the "next step" command, no one gets stuck halfway |
-| 6 | **Algorithm-backed, reproducible results** | Coupon parsing / enumeration / rating / dates / portrait / persona are implemented in `src/` with 103 offline self-tests — the host agent reuses them instead of re-writing each session, so the same rules yield the same result; read-only first, the only write `create-order` is off by default and needs explicit confirmation |
+| 1 | **McPersona card (the signature)** | After you eat, you get a shareable card: persona detection + one-of-a-kind themes — the same profile renders a **different poster for different people**. "Before-eating" tools all save money; we also give you emotional value "after eating" |
+| 2 | **Prices verified by the official API, never guessed** | Enumeration and pricing are strictly separated: every candidate combo is sent to the official `calculate-price` to get the **real amount payable**; local estimation is used only for ranking — the architecture makes it impossible for the model to invent prices |
+| 3 | **Gut vs. optimum + S/A/B/C rating** | Not just the answer, but "where your instinct lost, and what ¥0.4 extra buys you" — educative + persuasive; others only give "recommended vs. alternatives" |
+| 4 | **Silent cost: what expiring coupons are worth** | Each coupon's face value is **looked up from the menu** (threshold = discount / fixed-price = original − price / buy-one-get-one & free = item price), summed as "you have N coupons expiring in 30 days worth ¥Y — not using them is throwing money away"; unparsable coupons are counted as 0 and disclosed, **never fabricated** |
+| 5 | **Budget × calorie dual constraints** | One sentence satisfies both "stay under budget" and "stay under calorie limit"; calories are matched against the official nutrition database with honest coverage reporting — unmatchable items are treated as a lower bound, never wrongly killed |
+| 6 | **Algorithm-backed, reproducible results** | Coupon parsing / enumeration / rating / dates / portrait / persona / coupon value are implemented in `src/` with 106 offline self-tests — the host agent reuses them instead of re-writing each session; read-only first, the only write `create-order` is off by default and needs explicit confirmation |
 
 ---
 
