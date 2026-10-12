@@ -145,24 +145,30 @@ list-nutrition-foods  最优解的营养
 
 ```
 mcd-profile/
-├── SKILL.md                ★ Skill 定义（触发表 / 玩法 / 工具映射 / 安全）——宿主 agent 的「大脑」
-├── src/                    ★ 确定性算法代码（宿主 agent 复用，见 SKILL.md「算法代码承载」）
-│   ├── solver.py           McSolve：券解析 / 枚举剪枝 / 选优 / 评级
-│   ├── preheat.py          McPreheat：日期解析 / 冲突判定 / 备战度评分
-│   ├── analysis.py         archive 六维画像
-│   ├── persona.py          麦门人格判定（含无订单兜底）
-│   ├── nutrition.py        营养库匹配
-│   ├── models.py           领域模型 + 响应解析 + 单位换算
+├── 📦 SKILL.md              ★ Skill 本体（触发表 / 玩法 / 工具映射 / 安全）——宿主 agent 的「大脑」
+├── 📦 src/                  ★ Skill 本体：确定性算法代码（宿主 agent 复用）
+│   ├── solver.py            McSolve：券解析 / 枚举剪枝 / 选优 / 评级
+│   ├── preheat.py           McPreheat：日期解析 / 冲突判定 / 备战度评分
+│   ├── analysis.py          archive 六维画像
+│   ├── persona.py           麦门人格判定（含无订单兜底）
+│   ├── nutrition.py         营养库匹配
+│   ├── models.py            领域模型 + 响应解析 + 单位换算
 │   └── ...（渲染 / 文案层，供校验与产物生成）
-├── tests/                  103 项离线自测（算法可靠性的依据）
-├── data/                   脱敏样例
-├── README.md / README_EN.md  使用文档（中 / 英）
-├── MCP_INTEGRATION.md      麦当劳 MCP 集成说明
-├── CONTEST_DECLARATION.md  参赛声明
-├── workbuddy.md            WorkBuddy 开发上下文（参赛核验用）
-├── LICENSE                 MIT 许可
-└── docs/demo-card.png      产物示例（README 配图）
+├── 📦 data/                 Skill 本体：脱敏样例（算法离线兜底 / 可复现）
+├── 📦 assets/               Skill 本体：图片资源（assets/logo.png 品牌 Logo）
+│
+├── tests/                   项目文档：103 项离线自测（算法可靠性的依据）
+├── README.md / README_EN.md   项目文档：使用说明（中 / 英）
+├── MCP_INTEGRATION.md       项目文档：麦当劳 MCP 集成说明
+├── CONTEST_DECLARATION.md   项目文档：参赛声明
+├── workbuddy.md             项目文档：WorkBuddy 开发上下文（参赛核验用）
+├── LICENSE                  项目元数据
+└── docs/demo-card.png       项目文档：README 配图
 ```
+
+> **Skill 本体**（装进 WorkBuddy 只需这些）：`SKILL.md` + `src/` + `data/` + `assets/`——
+> 标准 skill 包形态（一个目录、`SKILL.md` 定义、资源在子目录、自包含）。
+> **其余均为项目文档**，与 skill 运行无关，只是留在仓库里供阅读/参赛核验。
 
 > 架构要点：`SKILL.md` 描述工作流，**确定性逻辑（券解析 / 枚举 / 评级 / 日期 / 画像 / 人格）
 > 由 `src/` 代码承载**——宿主 agent 复用这些函数而不是每个会话重新实现，保证结果可复现。

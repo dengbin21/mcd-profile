@@ -160,24 +160,30 @@ Translate your order history into a personal profile you can read and share:
 
 ```
 mcd-profile/
-├── SKILL.md                ★ Skill definition (triggers / plays / tool mapping / safety) — the "brain" for the host agent
-├── src/                    ★ Deterministic algorithm code (reused by the host agent, see SKILL.md "algorithm code")
-│   ├── solver.py           McSolve: coupon parsing / enumeration pruning / selection / rating
-│   ├── preheat.py          McPreheat: date parsing / conflict detection / readiness scoring
-│   ├── analysis.py         archive 6-dimension portrait
-│   ├── persona.py          McPersona detection (with no-order fallback)
-│   ├── nutrition.py        nutrition matching
-│   ├── models.py           domain models + response parsing + unit conversion
+├── 📦 SKILL.md              ★ Skill core (triggers / plays / tool mapping / safety) — the "brain" for the host agent
+├── 📦 src/                  ★ Skill core: deterministic algorithm code (reused by the host agent)
+│   ├── solver.py            McSolve: coupon parsing / enumeration pruning / selection / rating
+│   ├── preheat.py           McPreheat: date parsing / conflict detection / readiness scoring
+│   ├── analysis.py          archive 6-dimension portrait
+│   ├── persona.py           McPersona detection (with no-order fallback)
+│   ├── nutrition.py         nutrition matching
+│   ├── models.py            domain models + response parsing + unit conversion
 │   └── ...(rendering / copy layer, for verification & output generation)
-├── tests/                  103 offline self-tests (evidence of algorithm reliability)
-├── data/                   anonymized samples
-├── README.md / README_EN.md   Usage docs (Chinese / English)
-├── MCP_INTEGRATION.md      McDonald's MCP integration reference
-├── CONTEST_DECLARATION.md  Contest declaration
-├── workbuddy.md            WorkBuddy dev context (contest verification)
-├── LICENSE                 MIT license
-└── docs/demo-card.png      Example output (README hero image)
+├── 📦 data/                 Skill core: anonymized samples (offline fallback / reproducibility)
+├── 📦 assets/               Skill core: image assets (assets/logo.png brand logo)
+│
+├── tests/                   Project docs: 103 offline self-tests (algorithm reliability)
+├── README.md / README_EN.md   Project docs: usage (Chinese / English)
+├── MCP_INTEGRATION.md       Project docs: McDonald's MCP integration reference
+├── CONTEST_DECLARATION.md   Project docs: contest declaration
+├── workbuddy.md             Project docs: WorkBuddy dev context (contest verification)
+├── LICENSE                  Project metadata
+└── docs/demo-card.png       Project docs: README hero image
 ```
+
+> **Skill core** (all you need to install into WorkBuddy): `SKILL.md` + `src/` + `data/` + `assets/` —
+> a standard skill package: one directory, `SKILL.md` definition, resources in subdirectories,
+> self-contained. **Everything else is project documentation**, irrelevant to running the skill.
 
 > Architecture: `SKILL.md` describes the workflow; **deterministic logic (coupon parsing /
 > enumeration / rating / dates / portrait / persona) is carried by the `src/` code** — the host agent
