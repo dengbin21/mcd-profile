@@ -176,7 +176,9 @@ def render_card_png(a: Archive, out_path: str | Path, copy: CopyPack | None = No
     _stroke = lambda w, fg: _pe.withStroke(linewidth=w, foreground=fg)   # noqa: E731
 
     brand_x = 0.06
-    logo_arr = images.load_array(str(logo_path)) if logo_path else None
+    # Logo 自动探测：Skill 包根（src/ 的上两级）下的 assets/logo.png，无需调用方传参
+    logo_src = logo_path or str(Path(__file__).resolve().parent.parent.parent / "assets" / "logo.png")
+    logo_arr = images.load_array(logo_src)
     if logo_arr is not None:
         lax = fig.add_axes([0.06, M(0.954), 0.045, 0.045 / D])
         lax.imshow(logo_arr)
