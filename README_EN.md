@@ -2,9 +2,7 @@
 
 [中文](./README.md) | [English](./README_EN.md)
 
-![tests](https://github.com/dengbin21/mcd-profile/actions/workflows/tests.yml/badge.svg)
 ![license](https://img.shields.io/github/license/dengbin21/mcd-profile)
-![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 
 > **Find the most cost-effective order before you eat — then review every order you've ever eaten.**
 >
@@ -19,24 +17,21 @@
 > And try "when do my coupons expire, will they make it to the next campaign?" — it tells you exactly
 > which coupons won't survive until that day.
 
-This is an **Agent Skill**: the "brain" is `SKILL.md`, whose instructions are read by your **host AI
-agent**, which talks directly to the official McDonald's MCP (`mcd-mcp`, 20 read-only tools) to do all
+This is an **Agent Skill**. The product's source code is **a single file: `SKILL.md`** — its
+instructions are read by your **host AI agent** (WorkBuddy / Codex / any client that supports Skills +
+MCP), which talks directly to the official McDonald's MCP (`mcd-mcp`, 20 read-only tools) to do all
 the work. Which means:
 
-- No need to **clone the repo**, install Python, or bring any model key;
+- **One file to install**: drop `SKILL.md` into your client's skills directory and it works;
+- No need to clone the repo, install Python, or bring any model key;
 - Read-only first: solving / preheating / archiving only call query tools — no coupon claiming, no
   lottery, no ordering;
 - The only write operation, `create-order`, is an **optional ordering loop, off by default**, and
   requires explicit confirmation.
 
-The repo also keeps a **reproducible implementation** (`src/` algorithm modules + `tests/` + sample
-data) — the executable ground truth of the same logic (103 tests), which satisfies the contest's
-"source code" requirement and lets judges/developers verify the algorithms line by line; **but you
-don't need any of it to use this Skill.**
-
 ⭐ **Liked it? A star is the biggest support → [github.com/dengbin21/mcd-profile](https://github.com/dengbin21/mcd-profile)**
 
-![Demo — McPersona card (vertical long image, 1080×2063)](./docs/demo-card.png)
+![Demo — McPersona card (vertical long image)](./docs/demo-card.png)
 
 ---
 
@@ -49,14 +44,14 @@ don't need any of it to use this Skill.**
 | 3 | **Budget × calorie dual constraints** | One sentence satisfies both "stay under budget" and "stay under calorie limit"; calories are matched against the official nutrition database with honest coverage reporting — unmatchable items are treated as a lower bound, never wrongly killed |
 | 4 | **Preheat desk: which coupons won't survive until the next campaign** | Coupon expiry × campaign calendar are **crossed**, and conflicts are *computed*, not copywritten — most savings Skills never cross these two datasets |
 | 5 | **One closed loop: before eating → after eating** | A single `preheat → solve → eat → archive` timeline; every entry point hands you the "next step" command, no one gets stuck halfway |
-| 6 | **Honest, reproducible claims** | 103 tests + offline samples that run and can be re-checked; read-only first, the only write `create-order` is off by default and needs explicit confirmation |
+| 6 | **Honest scope, read-only first** | The only write `create-order` is off by default and needs explicit confirmation; `order-list` returns only the latest ~10 orders, positioned as "review" not "annual statement" |
 
 ---
 
-## Quick start (3 steps)
+## Quick start (2 steps)
 
-1. **Install this Skill into your AI agent** (any client that supports Skills + MCP, e.g. WorkBuddy /
-   Codex): import this repo, or drop `SKILL.md` into your client's skills directory.
+1. **Install the file**: drop `SKILL.md` into your client's (WorkBuddy / Codex etc.) skills
+   directory — this is the only file the product needs.
 2. **Configure the official McDonald's MCP** (one-time): get a Token at
    **https://open.mcd.cn/mcp**, then add an entry to your client's MCP config (WorkBuddy
    `~/.workbuddy/mcp.json` example):
@@ -84,27 +79,6 @@ don't need any of it to use this Skill.**
 | "When do my coupons expire" / "Will they survive the campaign" | **McPreheat**: `campaign-calendar` × coupon expiry |
 | "How much did I spend/save at McDonald's" / "What's my McPersona" | **archive**: `order-list` → 6-dimension portrait + persona card |
 | "Order me a…" | Ordering loop (dry-run by default, needs explicit confirmation) |
-
-## Try it now: zero-token demo (30 seconds)
-
-No token, no network — the bundled anonymized samples can produce the real outputs of all three
-plays with one command:
-
-```bash
-pip install -r requirements.txt
-python scripts/demo.py
-```
-
-Outputs land in `docs/`:
-
-| Output | What it is |
-|---|---|
-| `demo-card.png` | McPersona card (the vertical long image at the top of this page) |
-| `demo-solve.md` | McSolve report (your gut order vs. the algorithm's optimum) |
-| `demo-preheat.md` | McPreheat card (coupon expiry × campaign conflicts) |
-
-Run the self-tests: `python -m pytest tests/` (103 tests). Demo prices are local estimates from the
-bundled samples; online, every price is verified by the official `calculate-price`.
 
 ## The three signature plays
 
@@ -181,37 +155,17 @@ Translate your order history into a personal profile you can read and share:
 
 ```
 mcd-profile/
-├── SKILL.md                # Skill definition (the product itself: triggers / plays / tool mapping / safety)
-├── README.md               # This doc (how to use) — Chinese
-├── README_EN.md            # This doc — English
-├── LICENSE                 # MIT license
-├── MCP_INTEGRATION.md      # McDonald's MCP integration (Server / Tool / call flows / business value)
-├── CONTEST_DECLARATION.md  # Contest declaration (official text, unchanged)
-├── workbuddy.md            # WorkBuddy dev conversation context (linked reward verification)
-│
-├── .github/workflows/      # CI: runs the 103 self-tests (tests.yml)
-├── docs/                   # Demo assets (demo-card.png / demo-solve.md / demo-preheat.md)
-├── scripts/demo.py         # Zero-token offline demo: regenerates the docs/ outputs in one command
-├── src/                    # ★ Reproducible implementation (contest "source code"; not needed to use the Skill)
-│   ├── solver.py           #   McSolve: coupon rule parsing + combo enumeration + Top-30 verification + dual constraints
-│   ├── preheat.py          #   McPreheat: campaign × coupon-expiry conflicts + readiness
-│   ├── analysis.py         #   6-dimension portrait (spend/health/benefits/savings/habits/campaigns)
-│   ├── persona.py          #   McPersona engine (with no-order fallback)
-│   ├── theme.py            #   one-of-a-kind themes (persona → colors/badges/one-liners)
-│   ├── archive.py          #   collect → analyze → persona aggregation
-│   ├── sources.py          #   20 read-only tool collection + offline sample fallback
-│   ├── models.py           #   domain models & parsing (orders/coupons/stores/pricing/cart)
-│   ├── nutrition.py        #   nutrition database + 3-level product-name matching
-│   ├── ordering.py         #   ordering loop (pick store → rich menu → price → guardrails → order → verify)
-│   ├── order_text.py       #   ordering utterance parsing (pure functions)
-│   ├── mcp_client.py       #   minimal MCP Streamable HTTP client
-│   ├── textpack.py         #   copy layer (WorkBuddy in-the-loop + 3 guardrails)
-│   ├── images.py           #   product image tools (download/inline, degrade gracefully)
-│   └── report/             #   rendering: markdown / html / png / tokens (shared design)
-├── tests/                  # 103 self-tests (coupon parsing/solving/preheating/persona/copy guardrails)
-├── data/                   # anonymized samples (menu/orders/benefits/nutrition/campaigns)
-└── requirements.txt        # deps for running the reproducible implementation
+├── SKILL.md                ★ Product source code (the only file needed: triggers / plays / tool mapping / safety)
+├── README.md / README_EN.md   Usage docs (Chinese / English)
+├── MCP_INTEGRATION.md      McDonald's MCP integration reference (optional)
+├── CONTEST_DECLARATION.md  Contest declaration
+├── workbuddy.md            WorkBuddy dev context (contest verification)
+├── LICENSE                 MIT license
+└── docs/demo-card.png      Example output (README hero image)
 ```
+
+> This product needs no scripts or local code — everything is done by the `SKILL.md` instructions +
+> the official `mcd-mcp` service. One file to install.
 
 ## License
 

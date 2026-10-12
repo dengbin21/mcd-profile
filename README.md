@@ -2,9 +2,7 @@
 
 [中文](./README.md) | [English](./README_EN.md)
 
-![tests](https://github.com/dengbin21/mcd-profile/actions/workflows/tests.yml/badge.svg)
 ![license](https://img.shields.io/github/license/dengbin21/mcd-profile)
-![python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)
 
 > **先替你算出最划算的那一单，再帮你复盘吃过的每一单。**
 >
@@ -17,20 +15,18 @@
 >
 > 还有一句「我的券什么时候到期，赶得上下一场活动吗」，告诉你哪些券等不到那天。
 
-这是一个 **Agent Skill**，核心是一份「大脑」：`SKILL.md` 的指令由 **宿主 AI 代理**读取，
-直接调用麦当劳官方 MCP（`mcd-mcp`）的 20 个只读工具完成全部玩法。因此：
+这是一个 **Agent Skill**，产品源代码就是 **`SKILL.md` 这一个文件**：它的指令由
+**宿主 AI 代理**（WorkBuddy / Codex / 其他支持 Skill + MCP 的客户端）读取，直接调用
+麦当劳官方 MCP（`mcd-mcp`）的 20 个只读工具完成全部玩法。因此：
 
-- 用户**不需要 clone 仓库**、不需要装 Python、不需要任何模型 Key；
+- **装一个文件即可**：把 `SKILL.md` 放进客户端的 skills 目录就能用；
+- 不需要 clone 仓库、不需要装 Python、不需要任何模型 Key；
 - 只读优先：求解 / 预热 / 复盘全部只调用查询类工具，不领券、不抽奖、不下单；
 - 唯一写操作 `create-order` 作为可选点餐闭环，默认关闭、须显式确认。
 
-仓库里同时保留了**可复现实现**（`src/` 算法模块 + `tests/` + 样例数据）——它是同一套
-逻辑的可执行 ground truth（103 项测试），满足赛事「源代码」必交项，也让评委/开发者
-能逐行核对算法；**但使用本 Skill 用不到它们**。
-
 ⭐ **觉得有意思？给个 Star 就是最大的支持 → [github.com/dengbin21/mcd-profile](https://github.com/dengbin21/mcd-profile)**
 
-![演示产物：麦门人格卡（竖版长图 1080×2063，离线样例一键生成）](./docs/demo-card.png)
+![演示产物：麦门人格卡（竖版长图，WorkBuddy 实际生成的分享卡）](./docs/demo-card.png)
 
 ---
 
@@ -43,14 +39,13 @@
 | 3 | **预算 × 热量双约束** | 一句话同时满足「别超预算」和「别超标热量」；热量按官方营养库匹配、覆盖率如实披露，查不到的商品按下界处理、绝不误杀 |
 | 4 | **预热台：算出「哪些券等不到下一场活动」** | 券到期日 × 活动日历**交叉**，冲突是算出来的（不是编的文案）——大多数省钱类 Skill 不会把这两份数据交叉 |
 | 5 | **吃之前 → 吃之后一条闭环** | `preheat → solve → eat → archive` 一条时间线，每个入口跑完都给出「下一步」命令，不停在半路 |
-| 6 | **口径诚实、可复现** | 103 项测试 + 离线样例可跑可复核；只读优先，唯一写操作 `create-order` 默认关闭、须显式确认 |
+| 6 | **口径诚实、只读优先** | 唯一写操作 `create-order` 默认关闭、须显式确认；`order-list` 只返回最近约 10 单，定位「复盘」而非「年度账单」 |
 
 ---
 
-## 怎么用（三步）
+## 怎么用（两步）
 
-1. **把本 Skill 装进你的 AI 代理**（支持 Skill + MCP 的客户端，如 WorkBuddy / Codex）：
-   导入本仓库，或把 `SKILL.md` 放进客户端的 skills 目录。
+1. **装文件**：把 `SKILL.md` 放进客户端（WorkBuddy / Codex 等）的 skills 目录——这是本产品唯一需要的文件。
 2. **配好麦当劳官方 MCP**（一次性）：到 **https://open.mcd.cn/mcp** 申请 Token，
    然后在客户端的 MCP 配置里加一条（以 WorkBuddy 的 `~/.workbuddy/mcp.json` 为例）：
 
@@ -76,26 +71,6 @@
 | 「我的券什么时候到期」「赶得上活动吗」 | **McPreheat**：`campaign-calendar` × 券到期日 |
 | 「我在麦当劳花了/省了多少钱」「我的麦门人格」 | **archive**：`order-list` → 六维画像 + 人格卡 |
 | 「帮我点一份…」 | 点餐闭环（默认 dry-run，须显式确认才下单） |
-
-## 想先看效果？零 Token 演示（30 秒）
-
-不想申请 Token、不想联网也能先睹为快——仓库自带的脱敏样例可以一键跑出三个玩法的真实产物：
-
-```bash
-pip install -r requirements.txt
-python scripts/demo.py
-```
-
-产物落在 `docs/`：
-
-| 产物 | 说明 |
-|---|---|
-| `demo-card.png` | 麦门人格卡（本文顶部那张竖版长图） |
-| `demo-solve.md` | McSolve 最优解战报（你的直觉 vs 算法最优解对照） |
-| `demo-preheat.md` | McPreheat 预热卡（券到期 × 活动冲突） |
-
-跑自检：`python -m pytest tests/`（103 项）。演示价格为随附样例的本地估算，
-联网后一律以官方 `calculate-price` 验价为准。
 
 ## 三个招牌玩法
 
@@ -167,37 +142,17 @@ list-nutrition-foods  最优解的营养
 
 ```
 mcd-profile/
-├── SKILL.md                # Skill 定义（本产品本体：触发表 / 玩法 / 工具映射 / 安全）
-├── README.md               # 本文档（中文，怎么用）
-├── README_EN.md            # 本文档（英文版）
-├── LICENSE                 # MIT 许可
-├── MCP_INTEGRATION.md      # 麦当劳 MCP 集成说明（Server / Tool / 调用流程 / 业务价值）
-├── CONTEST_DECLARATION.md  # 参赛声明（官方原文，未改动）
-├── workbuddy.md            # WorkBuddy 开发对话上下文（联动奖励核验用）
-│
-├── .github/workflows/      # CI：跑 103 项自检（tests.yml）
-├── docs/                   # 演示产物（demo-card.png / demo-solve.md / demo-preheat.md）
-├── scripts/demo.py         # 零 Token 离线演示：一键重生成 docs/ 三样产物
-├── src/                    # ★ 可复现实现（报名「源代码」；使用 Skill 用不到）
-│   ├── solver.py           #   McSolve：券规则解析 + 组合枚举 + Top-30 验价 + 双约束
-│   ├── preheat.py          #   McPreheat：活动×券到期冲突 + 备战度
-│   ├── analysis.py         #   六大画像（消费/健康/权益/省钱/习惯/活动）
-│   ├── persona.py          #   麦门人格引擎（含无订单兜底）
-│   ├── theme.py            #   千人千面主题（人格 → 配色/徽章/金句）
-│   ├── archive.py          #   采集→分析→人格 聚合
-│   ├── sources.py          #   20 个只读工具采集 + 离线样例兜底
-│   ├── models.py           #   领域模型与解析（订单/券/门店/算价/购物车）
-│   ├── nutrition.py        #   营养库与商品名→营养三级匹配
-│   ├── ordering.py         #   点餐链路（选店→富菜单→算价→护栏→下单→复核）
-│   ├── order_text.py       #   点餐话术解析（纯函数）
-│   ├── mcp_client.py       #   极简 MCP Streamable HTTP 客户端
-│   ├── textpack.py         #   文案层（WorkBuddy 在环 + 三道护栏）
-│   ├── images.py           #   商品图工具（下载/内嵌，全程降级）
-│   └── report/             #   渲染：markdown / html / png / tokens（公共设计）
-├── tests/                  # 103 项自测（券解析/求解/预热/人格/文案护栏）
-├── data/                   # 脱敏样例（菜单/订单/权益/营养/活动）
-└── requirements.txt        # 跑可复现实现的依赖
+├── SKILL.md                ★ 产品源代码（唯一必需：触发表 / 玩法 / 工具映射 / 安全）
+├── README.md / README_EN.md  使用文档（中 / 英）
+├── MCP_INTEGRATION.md      麦当劳 MCP 集成说明（可选参考）
+├── CONTEST_DECLARATION.md  参赛声明
+├── workbuddy.md            WorkBuddy 开发上下文（参赛核验用）
+├── LICENSE                 MIT 许可
+└── docs/demo-card.png      产物示例（README 配图）
 ```
+
+> 本产品不需要任何脚本或本地代码——全部功能由 `SKILL.md` 指令 + 官方 `mcd-mcp`
+> 服务完成，装一个文件即可用。
 
 ## 许可证
 
